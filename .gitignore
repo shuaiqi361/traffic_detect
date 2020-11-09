@@ -1,0 +1,9 @@
+.idea/*
+__pycache__/*
+*.tar
+*.npy
+*.jpg
+*.png
+dataset_tools/coco/*
+dataset_tools/detrac/*
+dataset_tools/similar_code/*
