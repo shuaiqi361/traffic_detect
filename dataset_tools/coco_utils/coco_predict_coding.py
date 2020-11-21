@@ -48,7 +48,7 @@ for i in range(n_coeffs):
 
 print(total_counts)
 print('Total intersections: {}, average {}'.format(sum(total_counts), np.mean(total_counts)))
-
+# exit()
 coco = COCO(annFile)
 
 # Load all annotations

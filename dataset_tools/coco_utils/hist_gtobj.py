@@ -71,7 +71,9 @@ for annotation in all_anns:
     cat_name = coco.loadCats([cat_id])[0]['name']
 
     # Downsample the contour to fix number of vertices
+    original_labeled_polygon = contour.copy()
     fixed_contour_p = resample(contour, num=num_vertices)
+    resampled_labeled_polygon = fixed_contour_p.copy()
 
     # Indexing from the left-most vertex, argmin x-axis
     idx = np.argmin(fixed_contour_p[:, 0])
@@ -87,10 +89,10 @@ for annotation in all_anns:
     fixed_contour_p[:, 1] = np.clip(fixed_contour_p[:, 1], gt_y1, gt_y1 + gt_h)
 
     # visualize resampled points in image
-    img = cv2.imread(image_name)
-    cv2.polylines(img, [fixed_contour_p.astype(np.int32)], True, (0, 0, 255))
-    cv2.imshow('Poly', img)
-    cv2.waitKey(1)
+    # img = cv2.imread(image_name)
+    # cv2.polylines(img, [fixed_contour_p.astype(np.int32)], True, (0, 0, 255))
+    # cv2.imshow('Poly', img)
+    # cv2.waitKey(1)
 
     contour_mean = np.mean(fixed_contour_p, axis=0)
     contour_std = np.sqrt(np.sum(np.std(fixed_contour_p, axis=0) ** 2))
@@ -100,19 +102,37 @@ for annotation in all_anns:
     learned_val_codes, _ = fast_ista(norm_shape.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=80)
     recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((-1, 2))
     recon_contour = recon_contour * contour_std + contour_mean
+    reconstructed_gt_polygon = recon_contour.copy()
 
     # show the learned code distribution
-    fig = plt.figure()
-    plt.plot(np.arange(n_coeffs), learned_val_codes.reshape((-1,)), color='green',
-             marker='o', linestyle='dashed', linewidth=2, markersize=6)
-    plt.ylabel('Value of each coefficient')
-    plt.xlabel('All {} coefficients'.format(n_coeffs))
-    plt.title('Distribution of GT coefficients for {}'.format(cat_name))
-    plt.show()
+    # fig = plt.figure()
+    # plt.plot(np.arange(n_coeffs), learned_val_codes.reshape((-1,)), color='green',
+    #          marker='o', linestyle='dashed', linewidth=2, markersize=6)
+    # plt.ylabel('Value of each coefficient')
+    # plt.xlabel('All {} coefficients'.format(n_coeffs))
+    # plt.title('Distribution of GT coefficients for {}'.format(cat_name))
+    # plt.show()
 
     print('image id', annotation['image_id'])
 
+    # visualize labeled polygons in image
+    # img = cv2.imread(image_name)
+    # cv2.polylines(img, [original_labeled_polygon.astype(np.int32)], True, (0, 0, 255))
+    # cv2.imshow('Original {} Poly'.format(cat_name), img)
+    # cv2.waitKey()
+    # cv2.destroyAllWindows()
 
+    # img = cv2.imread(image_name)
+    # cv2.polylines(img, [resampled_labeled_polygon.astype(np.int32)], True, (0, 0, 255))
+    # cv2.imshow('Resampled {} Poly'.format(cat_name), img)
+    # cv2.waitKey()
+    # cv2.destroyAllWindows()
+    #
+    img = cv2.imread(image_name)
+    cv2.polylines(img, [reconstructed_gt_polygon.astype(np.int32)], True, (0, 0, 255))
+    cv2.imshow('Reconstructed {} Poly'.format(cat_name), img)
+    cv2.waitKey()
+    # cv2.destroyAllWindows()
 
     # counts_codes.append(np.sum(learned_val_codes != 0))
     #

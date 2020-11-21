@@ -4,6 +4,7 @@ from pycocotools.cocoeval import COCOeval
 import numpy as np
 import cv2
 import json
+from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample
 
 
 def encode_mask(mask):
@@ -33,7 +34,10 @@ seg_results = []
 all_img_ids = []
 
 for annotation in all_anns:
-    if annotation['iscrowd'] == 1 or type(annotation['segmentation']) != list:
+    # if annotation['iscrowd'] == 1 or type(annotation['segmentation']) != list:
+    #     continue
+
+    if type(annotation['segmentation']) != list:
         continue
 
     img = coco.loadImgs(annotation['image_id'])[0]
@@ -61,31 +65,7 @@ for annotation in all_anns:
     det_results.append(det)
 
     # convert polygons to masks, then to RLE
-    polygons = annotation['segmentation']
-    if len(polygons) > 1:
-        bg = np.zeros((h_img, w_img, 1), dtype=np.uint8)
-        for poly in polygons:
-            len_poly = len(poly)
-            vertices = np.zeros((1, len_poly // 2, 2), dtype=np.int32)
-            for i in range(len_poly // 2):
-                vertices[0, i, 0] = int(poly[2 * i])
-                vertices[0, i, 1] = int(poly[2 * i + 1])
-            # cv2.fillPoly(bg, vertices, color=(255))
-            cv2.drawContours(bg, vertices, color=(255), contourIdx=-1, thickness=-1)
-
-        pads = 5
-        while True:
-            kernel = np.ones((pads, pads), np.uint8)
-            bg_closed = cv2.morphologyEx(bg, cv2.MORPH_CLOSE, kernel)
-            obj_contours, _ = cv2.findContours(bg_closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            if len(obj_contours) > 1:
-                pads += 5
-            else:
-                polygons = np.ndarray.flatten(obj_contours[0]).tolist()
-                break
-    else:
-        # continue
-        polygons = annotation['segmentation'][0]
+    polygons = get_connected_polygon(annotation['segmentation'], (h_img, w_img))
 
     # len_poly = len(polygons)
     # vertices = np.zeros((1, len_poly // 2, 2), dtype=np.int32)
@@ -96,6 +76,20 @@ for annotation in all_anns:
     # bg = np.zeros((h_img, w_img, 3), dtype=np.uint8)
     # cv2.fillPoly(bg, vertices, color=(255, 255, 255))
     # rle = encode_mask((bg[:, :, 0] // 255).astype(np.uint8))
+
+    # visualize resampled points with multiple parts in image side by side
+    # if len(annotation['segmentation']) > 1:
+    #     img = cv2.imread(image_name)
+    #     img_connect = cv2.imread(image_name)
+    #     for cnt in range(len(annotation['segmentation'])):
+    #         polys = np.array(annotation['segmentation'][cnt]).reshape((-1, 2))
+    #         cv2.polylines(img, [polys.astype(np.int32)], True, (10, 10, 255), thickness=2)
+    #
+    #     poly_shape = np.array(polygons).reshape((-1, 2))
+    #     cv2.polylines(img_connect, [poly_shape.astype(np.int32)], True, (10, 10, 255), thickness=2)
+    #     im_cat = np.concatenate((img, img_connect), axis=1)
+    #     cv2.imshow('Poly Original vs. Connected', im_cat)
+    #     cv2.waitKey()
 
     # convert polygons to rle masks
     rles = cocomask.frPyObjects([polygons], h_img, w_img)
