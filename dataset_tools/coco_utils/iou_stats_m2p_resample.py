@@ -6,7 +6,9 @@ import cv2
 import matplotlib.pyplot as plt
 import json
 from scipy.signal import resample
-from dataset_tools.coco_utils.utils import turning_angle_resample, get_connected_polygon_using_mask, get_connected_polygon
+from copy import deepcopy
+from dataset_tools.coco_utils.utils import turning_angle_resample, get_connected_polygon_using_mask, \
+    get_connected_polygon_with_mask
 
 
 def encode_mask(mask):
@@ -32,6 +34,9 @@ annIds = coco.getAnnIds(catIds=catIds)
 all_anns = coco.loadAnns(ids=annIds)
 
 counter_obj = 0
+counter_multiparts = 0
+counter_complicated = 0
+counter_simple = 0
 
 det_results = []
 seg_results = []
@@ -53,8 +58,16 @@ for annotation in all_anns:
     if annotation['image_id'] not in all_img_ids:
         all_img_ids.append(annotation['image_id'])
 
-    polygons = get_connected_polygon_using_mask(annotation['segmentation'], (h_img, w_img),
-                                                n_vertices=num_vertices, closing_max_kernel=50)
+    # polygons, is_simple = get_connected_polygon_using_mask(annotation['segmentation'], (h_img, w_img),
+    #                                                        n_vertices=num_vertices, closing_max_kernel=50)
+    polygons = get_connected_polygon_with_mask(annotation['segmentation'], (h_img, w_img),
+                                                           n_vertices=num_vertices, closing_max_kernel=50)
+    # if is_simple == 0:
+    #     counter_multiparts += 1
+    # elif is_simple == 1:
+    #     counter_simple += 1
+    # else:
+    #     counter_complicated += 1
     # polygons = get_connected_polygon(annotation['segmentation'], (h_img, w_img))
     contour = np.array(polygons).reshape((-1, 2))
     bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
@@ -63,11 +76,13 @@ for annotation in all_anns:
     cat_id = annotation['category_id']
     cat_name = coco.loadCats([cat_id])[0]['name']
 
-    # if cat_name != 'oven':
+    # if cat_name != 'bus' and cat_name != 'dog':
     #     continue
 
     # Downsample the contour to fix number of vertices
     # fixed_contour = resample(contour, num=num_vertices)
+    # print('0-- ', annotation['segmentation'][0][0:2])
+    # print('1-- ', contour[0])
     if len(contour) > num_vertices:
         fixed_contour = resample(contour, num=num_vertices)
         # fixed_contour = align_original_polygon(fixed_contour_, contour)
@@ -77,6 +92,8 @@ for annotation in all_anns:
 
     fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
     fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
+
+    # print('2-- ', fixed_contour[0])
 
     det = {
         'image_id': annotation['image_id'],
@@ -111,20 +128,46 @@ for annotation in all_anns:
     obj_ious.append(iou[0][0])
 
     # visualize resampled points in image side by side
-    if iou[0][0] < 0.65:
-        print('Image id:', annotation['image_id'])
-        img = cv2.imread(image_name)
-        img_ref = cv2.imread(image_name)
-        # plot the original gt polygons
-        for po in annotation['segmentation']:
-            tmp_contour = np.array(po).reshape((-1, 2))
-            cv2.polylines(img_ref, [tmp_contour.astype(np.int32)], True, (10, 10, 255), thickness=2)
-        cv2.polylines(img, [fixed_contour.astype(np.int32)], True, (10, 10, 255), thickness=2)
-        image = cv2.putText(img, 'IoU:{:.3f}'.format(iou[0][0]), (25, 25), cv2.FONT_HERSHEY_SIMPLEX,
-                            fontScale=1, color=(0, 0, 200), thickness=2)
-        im_cat = np.concatenate((img_ref, img), axis=1)
-        cv2.imshow('Original vs. Resampled', im_cat)
-        cv2.waitKey()
+    # if iou[0][0] < 0.95:
+    #     print('Image id:', annotation['image_id'])
+    #     img = cv2.imread(image_name)
+    #     img_ref = cv2.imread(image_name)
+    #     # plot the original gt polygons
+    #     for po in annotation['segmentation']:
+    #         tmp_contour = np.array(po).reshape((-1, 2))
+    #         cv2.polylines(img_ref, [tmp_contour.astype(np.int32)], True, (10, 10, 255), thickness=2)
+    #     cv2.polylines(img, [fixed_contour.astype(np.int32)], True, (10, 10, 255), thickness=2)
+    #     image = cv2.putText(img, 'IoU:{:.3f}'.format(iou[0][0]), (25, 25), cv2.FONT_HERSHEY_SIMPLEX,
+    #                         fontScale=1, color=(0, 0, 200), thickness=2)
+    #     im_cat = np.concatenate((img_ref, img), axis=1)
+    #     cv2.imshow('Original vs. Resampled', im_cat)
+    #     cv2.waitKey()
+
+    # cv2.imshow('mask m', m * 255)
+    # print('Values in m: ', np.sum(m))
+    # cv2.waitKey()
+
+    # visualize resampled points in image side by side for small objects
+    # print('3-- ', fixed_contour[0])
+    # exit()
+    # if iou[0][0] < 0.45 and len(annotation['segmentation']) == 1:
+    #     print('Image id:', annotation['image_id'])
+    #     # print(m.shape)
+    #     fig = plt.figure()
+    #     # plot the original gt polygons
+    #     for po in annotation['segmentation']:
+    #         tmp_contour = np.array(po).reshape((-1, 2))
+    #         plt.plot(tmp_contour[:, 0], tmp_contour[:, 1], color='green', marker='o', linestyle='--',
+    #                  linewidth=2, markersize=6)
+    #     plt.plot(fixed_contour[:, 0], fixed_contour[:, 1], color='blue', marker='+', linestyle='-',
+    #              linewidth=1, markersize=6)
+    #     # resampled_poly = deepcopy(fixed_contour)
+    #     # resampled_poly = resampled_poly.astype(np.uint8)
+    #     # plt.plot(resampled_poly[:, 0], resampled_poly[:, 1], color='red', marker='*', linestyle='-',
+    #     #          linewidth=1, markersize=6)
+    #     plt.title('original versus resampled(iou:{:.3f})'.format(iou[0][0]))
+    #     plt.legend(['GT', 'Resampled', 'Quant'])
+    #     plt.show()
 
 
 with open('{}/results/{}_det_results_v{}.json'.format(dataDir, dataType, num_vertices), 'w') as f_det:
@@ -153,6 +196,7 @@ coco_eval.summarize()
 
 
 # Show statistics of IoUs between objects
+print('OBJECTS: multi {}, simple {}, complicated {}'.format(counter_multiparts, counter_simple, counter_complicated))
 print('IoU stats of {} instances, mean {:.3f}, std {:.3f}'.format(len(obj_ious), np.mean(obj_ious), np.std(obj_ious)))
 print('Number of objects(total {}) above threshold 0.75: {}/{}'.format(len(obj_ious),
                                                                       np.sum(np.array(obj_ious) < 0.75),
@@ -166,3 +210,5 @@ plt.xlabel('Intersection over Unions')
 plt.ylabel('Number of Instances')
 plt.title('IoUs of {}-resampled instances on COCO val17'.format(num_vertices))
 plt.show()
+
+

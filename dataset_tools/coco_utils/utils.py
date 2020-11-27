@@ -2,9 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import distance
 import cv2
+from pycocotools import mask as cocomask
 
 
-def get_connected_polygon_using_mask(polygons, img_hw, n_vertices, closing_max_kernel=50):
+def get_connected_polygon_with_mask(polygons, img_hw, n_vertices, closing_max_kernel=50):
     h_img, w_img = img_hw
     if len(polygons) > 1:
         bg = np.zeros((h_img, w_img, 1), dtype=np.uint8)
@@ -12,8 +13,8 @@ def get_connected_polygon_using_mask(polygons, img_hw, n_vertices, closing_max_k
             len_poly = len(poly)
             vertices = np.zeros((1, len_poly // 2, 2), dtype=np.int32)
             for i in range(len_poly // 2):
-                vertices[0, i, 0] = int(poly[2 * i])
-                vertices[0, i, 1] = int(poly[2 * i + 1])
+                vertices[0, i, 0] = int(np.round(poly[2 * i]))
+                vertices[0, i, 1] = int(np.round(poly[2 * i + 1]))
             cv2.drawContours(bg, vertices, color=255, contourIdx=-1, thickness=-1)
 
         pads = 5
@@ -38,13 +39,73 @@ def get_connected_polygon_using_mask(polygons, img_hw, n_vertices, closing_max_k
             len_poly = len(poly)
             vertices = np.zeros((1, len_poly // 2, 2), dtype=np.int32)
             for i in range(len_poly // 2):
-                vertices[0, i, 0] = int(poly[2 * i])
-                vertices[0, i, 1] = int(poly[2 * i + 1])
+                vertices[0, i, 0] = int(np.round(poly[2 * i]))
+                vertices[0, i, 1] = int(np.round(poly[2 * i + 1]))
             cv2.drawContours(bg, vertices, color=255, contourIdx=-1, thickness=-1)
 
         obj_contours, _ = cv2.findContours(bg, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 
         return np.ndarray.flatten(obj_contours[0]).tolist()
+
+
+def get_connected_polygon_coco_mask(polygons, img_hw, closing_max_kernel=50):
+    h_img, w_img = img_hw
+    rles = cocomask.frPyObjects(polygons, h_img, w_img)
+    rle = cocomask.merge(rles)  # ['counts'].decode('ascii')
+    m = cocomask.decode(rle)  # draw mask on binary image
+    if len(polygons) > 1:
+        pads = 5
+        while True:
+            kernel = np.ones((pads, pads), np.uint8)
+            bg_closed = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel)
+            obj_contours, _ = cv2.findContours(bg_closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+            if len(obj_contours) > 1:
+                pads += 5
+            else:
+                return np.ndarray.flatten(obj_contours[0]).tolist()
+
+            if pads > closing_max_kernel:
+                obj_contours = sorted(obj_contours, key=cv2.contourArea)
+                return np.ndarray.flatten(obj_contours[-1]).tolist()  # The largest piece
+
+    else:
+        obj_contours, _ = cv2.findContours(m, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+
+        return np.ndarray.flatten(obj_contours[0]).tolist()
+
+
+def get_connected_polygon_using_mask(polygons, img_hw, n_vertices, closing_max_kernel=50):
+    h_img, w_img = img_hw
+    rles = cocomask.frPyObjects(polygons, h_img, w_img)
+    rle = cocomask.merge(rles)  # ['counts'].decode('ascii')
+    m = cocomask.decode(rle)  # draw mask on binary image
+    is_simple = 0  # 0 multiple parts, 1 simple, 2 complicated
+    if len(polygons) > 1:
+        pads = 5
+        while True:
+            kernel = np.ones((pads, pads), np.uint8)
+            bg_closed = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel)
+            obj_contours, _ = cv2.findContours(bg_closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+            # obj_contours, _ = cv2.findContours(bg_closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_L1)
+            if len(obj_contours) > 1:
+                pads += 5
+            else:
+                return np.ndarray.flatten(obj_contours[0]).tolist(), is_simple
+
+            if pads > closing_max_kernel:
+                obj_contours = sorted(obj_contours, key=cv2.contourArea)
+                return np.ndarray.flatten(obj_contours[-1]).tolist(), is_simple  # The largest piece
+
+    else:
+        if len(polygons[0]) <= n_vertices:
+            is_simple = 1
+            return polygons[0], is_simple
+
+        obj_contours, _ = cv2.findContours(m, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        # obj_contours, _ = cv2.findContours(bg, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_L1)
+        is_simple = 2
+
+        return np.ndarray.flatten(obj_contours[0]).tolist(), is_simple
 
 
 def get_connected_polygon(polygons, img_hw, closing_max_kernel=50):

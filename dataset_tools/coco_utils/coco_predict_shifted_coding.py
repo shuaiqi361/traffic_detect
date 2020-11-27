@@ -8,7 +8,8 @@ import cv2
 import json
 import matplotlib.pyplot as plt
 from scipy.signal import resample
-from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample
+from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
+    get_connected_polygon_with_mask
 
 
 def encode_mask(mask):
@@ -19,13 +20,13 @@ def encode_mask(mask):
 
 
 num_vertices = 32
-alpha = 0.01
+alpha = 0.1
 n_coeffs = 64
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'val2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
-dictFile = '{}/dictionary/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
+dictFile = '{}/dictionary/train_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
 learned_dict = np.load(dictFile)
 
 coco = COCO(annFile)
@@ -60,7 +61,8 @@ for annotation in all_anns:
     if annotation['image_id'] not in all_img_ids:
         all_img_ids.append(annotation['image_id'])
 
-    polygons = get_connected_polygon(annotation['segmentation'], (h_img, w_img))
+    polygons = get_connected_polygon_with_mask(annotation['segmentation'], (h_img, w_img),
+                                               n_vertices=num_vertices, closing_max_kernel=50)
     gt_bbox = annotation['bbox']
     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
     contour = np.array(polygons).reshape((-1, 2))
@@ -71,24 +73,21 @@ for annotation in all_anns:
     # Downsample the contour to fix number of vertices
     if len(contour) > num_vertices:
         fixed_contour = resample(contour, num=num_vertices)
-        # fixed_contour = align_original_polygon(fixed_contour_, contour)
-    elif len(contour) < num_vertices:
-        fixed_contour = turning_angle_resample(contour, num_vertices)
     else:
-        fixed_contour = contour
+        fixed_contour = turning_angle_resample(contour, num_vertices)
+
+    fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
+    fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
+
+    clockwise_flag = check_clockwise_polygon(fixed_contour)
+    if not clockwise_flag:
+        fixed_contour = np.flip(fixed_contour, axis=0)
+    else:
+        fixed_contour = fixed_contour.copy()
 
     # Indexing from the left-most vertex, argmin x-axis
     idx = np.argmin(fixed_contour[:, 0])
     indexed_shape = np.concatenate((fixed_contour[idx:, :], fixed_contour[:idx, :]), axis=0)
-
-    clockwise_flag = check_clockwise_polygon(indexed_shape)
-    if not clockwise_flag:
-        fixed_contour = np.flip(indexed_shape, axis=0)
-    else:
-        fixed_contour = indexed_shape.copy()
-
-    fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
-    fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
 
     # visualize original resampled points in image
     # img = cv2.imread(image_name)
@@ -96,30 +95,32 @@ for annotation in all_anns:
     # cv2.imshow('Poly', img)
     # cv2.waitKey()
 
-    x1, y1, x2, y2 = min(fixed_contour[:, 0]), min(fixed_contour[:, 1]), \
-                     max(fixed_contour[:, 0]), max(fixed_contour[:, 1])
+    # x1, y1, x2, y2 = min(fixed_contour[:, 0]), min(fixed_contour[:, 1]), \
+    #                  max(fixed_contour[:, 0]), max(fixed_contour[:, 1])
+    #
+    # bbox_width, bbox_height = x2 - x1, y2 - y1
+    # bbox = [x1, y1, bbox_width, bbox_height]
+    # bbox_center = np.array([(x1 + x2) / 2., (y1 + y2) / 2.])
+    shape_center = np.mean(indexed_shape, axis=0)
 
-    bbox_width, bbox_height = x2 - x1, y2 - y1
-    bbox = [x1, y1, bbox_width, bbox_height]
-    bbox_center = np.array([(x1 + x2) / 2., (y1 + y2) / 2.])
-
-    norm_shape = fixed_contour - bbox_center
+    norm_shape = fixed_contour - shape_center
 
     # sparsing coding using pre-learned dict
     learned_val_codes, _ = fast_ista(norm_shape.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=80)
     recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((-1, 2))
-    recon_contour = recon_contour + bbox_center
+    recon_contour = recon_contour + shape_center
 
     counts_codes.append(np.sum(learned_val_codes != 0))
 
     x1, y1, x2, y2 = min(recon_contour[:, 0]), min(recon_contour[:, 1]), \
                      max(recon_contour[:, 0]), max(recon_contour[:, 1])
     bbox = [x1, y1, x2 - x1, y2 - y1]
+    bbox_out = list(map(lambda x: float("{:.2f}".format(x)), bbox))
     det = {
         'image_id': annotation['image_id'],
         'category_id': cat_id,
         'score': 1.,
-        'bbox': bbox
+        'bbox': bbox_out
     }
     det_results.append(det)
 
@@ -129,11 +130,11 @@ for annotation in all_anns:
     # cv2.imshow('Poly', img)
     # cv2.waitKey()
 
-    fig = plt.figure()
-    plt.hist(learned_val_codes[0], bins=100, color='g', alpha=0.5)
-    plt.xlabel('Coefficients')
-    plt.title('Sparse Coding of a {}'.format(cat_name))
-    plt.show()
+    # fig = plt.figure()
+    # plt.hist(learned_val_codes[0], bins=100, color='g', alpha=0.5)
+    # plt.xlabel('Coefficients')
+    # plt.title('Sparse Coding of a {}'.format(cat_name))
+    # plt.show()
 
     # convert polygons to rle masks
     poly = np.ndarray.flatten(recon_contour, order='C').tolist()  # row major flatten

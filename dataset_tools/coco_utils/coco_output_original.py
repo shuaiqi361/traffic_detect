@@ -4,7 +4,7 @@ from pycocotools.cocoeval import COCOeval
 import numpy as np
 import cv2
 import json
-from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample
+from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, get_connected_polygon_with_mask
 
 
 def encode_mask(mask):
@@ -65,7 +65,8 @@ for annotation in all_anns:
     det_results.append(det)
 
     # convert polygons to masks, then to RLE
-    polygons = get_connected_polygon(annotation['segmentation'], (h_img, w_img))
+    # polygons = get_connected_polygon(annotation['segmentation'], (h_img, w_img))
+    polygons = get_connected_polygon_with_mask(annotation['segmentation'], (h_img, w_img), 32)
 
     # len_poly = len(polygons)
     # vertices = np.zeros((1, len_poly // 2, 2), dtype=np.int32)

@@ -10,10 +10,12 @@ import os
 from scipy.signal import resample
 from scipy import linalg
 from dataset_tools.coco_utils.utils import intersect
+from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
+    get_connected_polygon_with_mask
 
 n_vertices = 32  # predefined number of polygonal vertices
-n_coeffs = 128
-alpha = 0.1
+n_coeffs = 32
+alpha = 0.01
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'
@@ -39,7 +41,7 @@ out_resampled_shape_file = '{}/train_norm_data_v{}.npy'.format(save_data_root, n
 # COCO_original_shape_objects = []  # all objects
 # COCO_resample_shape_matrix = np.zeros(shape=(0, n_vertices * 2))
 # for annotation in all_anns:
-#     if random.random() > 0.3:  # randomly skip 70% of the objects
+#     if random.random() > 0.4:  # randomly skip 70% of the objects
 #         continue
 #     counter_total += 1
 #
@@ -56,6 +58,9 @@ out_resampled_shape_file = '{}/train_norm_data_v{}.npy'.format(save_data_root, n
 #     if w_img < 1 or h_img < 1:
 #         continue
 #
+#     if len(annotation['segmentation']) > 1:
+#         continue
+#
 #     polygons = annotation['segmentation'][0]
 #     gt_bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
 #     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
@@ -65,7 +70,7 @@ out_resampled_shape_file = '{}/train_norm_data_v{}.npy'.format(save_data_root, n
 #     # obj = {'image_name': image_name, 'polygons': polygons, 'bbox': bbox, 'cat_name': cat_name}
 #     # COCO_original_shape_objects.append(obj)
 #
-#     if len(polygons) < 24 * 2 or len(polygons) > 96 * 2:
+#     if len(polygons) < 32 * 2:
 #         counter_poor += 1
 #         continue
 #     else:
@@ -102,7 +107,7 @@ out_resampled_shape_file = '{}/train_norm_data_v{}.npy'.format(save_data_root, n
 #
 #     COCO_resample_shape_matrix = np.concatenate((COCO_resample_shape_matrix, norm_shape.reshape((1, -1))), axis=0)
 #
-#     if len(COCO_resample_shape_matrix) >= 60000:
+#     if len(COCO_resample_shape_matrix) >= 40000:
 #         break
 #
 #
