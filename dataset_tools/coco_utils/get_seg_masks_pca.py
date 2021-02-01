@@ -1,5 +1,6 @@
 from pycocotools.coco import COCO
 import numpy as np
+import pickle
 from dataset_tools.coco_utils.utils import check_clockwise_polygon
 from sparse_coding.utils import fast_ista, iterative_dict_learning_fista
 import random
@@ -8,22 +9,42 @@ import copy
 import matplotlib.pyplot as plt
 import os
 from scipy.signal import resample
+from sklearn.decomposition import PCA
 from scipy import linalg
 from dataset_tools.coco_utils.utils import intersect
 from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
     get_connected_polygon_with_mask
 
+
+def learn_pca_components(shapes, n_components, whiten=False):
+    """Learn sparse components from a dataset of shapes."""
+    # Learn sparse components and predict coefficients for the dataset
+    pca_learner = PCA(n_components=n_components, whiten=whiten)
+
+    dicts = pca_learner.fit(shapes)  # n_samples, n_feats
+    learned_dict_ = dicts.components_  # n_coeffs, n_feats
+    learned_codes_ = np.matmul(shapes - dicts.mean_, learned_dict_.T)
+
+    print('PCA learning... ', learned_dict_.shape, learned_codes_.shape)
+    # error = np.mean((np.matmul(learned_codes_, learned_dict_) + dicts.mean_ - shapes) ** 2)
+    # print('reconstruction error(frobenius norm): ', error)
+
+    return learned_dict_, learned_codes_, dicts.explained_variance_, dicts.mean_
+
+
 n_vertices = 32  # predefined number of polygonal vertices
-n_coeffs = 128
-alpha = 0.1
+n_coeffs = 64
+alpha = 0.01
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
 
 save_data_root = os.path.join(dataDir, 'dictionary')
-out_dict = '{}/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(save_data_root, n_vertices, n_coeffs, alpha)
-out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_root, n_vertices)
+out_dict = '{}/train_pca_components_v{}_n{}.npy'.format(save_data_root, n_vertices, n_coeffs)
+out_resampled_shape_file = '{}/train_norm_data_v{}.npy'.format(save_data_root, n_vertices)
+
+out_stat = {}
 
 # coco = COCO(annFile)
 # cats = coco.loadCats(coco.getCatIds())
@@ -93,8 +114,9 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #     canonic_contour[:, 1] = np.clip(canonic_contour[:, 1], gt_y1, gt_y1 + gt_h)
 #
 #     # Normalize the shapes
-#     shape_center = np.mean(canonic_contour, axis=0)
-#     norm_shape = (canonic_contour - shape_center) / np.array([gt_w / 2., gt_h / 2.])
+#     contour_mean = np.mean(canonic_contour, axis=0)
+#     # contour_std = np.sqrt(np.sum(np.std(canonic_contour, axis=0) ** 2))
+#     norm_shape = canonic_contour - contour_mean
 #
 #     # draw re-sampled points
 #     # fig = plt.figure()
@@ -106,9 +128,8 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #
 #     COCO_resample_shape_matrix = np.concatenate((COCO_resample_shape_matrix, norm_shape.reshape((1, -1))), axis=0)
 #
-#     if len(COCO_resample_shape_matrix) >= 50000:
+#     if len(COCO_resample_shape_matrix) >= 60000:
 #         break
-#
 #
 # print('Total valid shape: ', counter_valid)
 # print('Poor shape: ', counter_poor)
@@ -122,38 +143,36 @@ shape_data = np.load(out_resampled_shape_file)
 print('Loading train2017 coco shape data: ', shape_data.shape)
 n_shapes, n_feats = shape_data.shape
 
-learned_dict, learned_codes, losses, error = iterative_dict_learning_fista(shape_data,
-                                                                    n_components=n_coeffs,
-                                                                    alpha=alpha,
-                                                                    batch_size=500,
-                                                                    n_iter=500)
+learned_dict, learned_codes, variance_explained, mean_shape = learn_pca_components(shape_data, n_coeffs)
 
-
-print('Training error: ', error)
-rec_error = 0.5 * linalg.norm(np.matmul(learned_codes, learned_dict) - shape_data) ** 2 / shape_data.shape[0]
+rec_error = 0.5 * linalg.norm(np.matmul(learned_codes, learned_dict) + mean_shape - shape_data) ** 2 / shape_data.shape[0]
 print('Training Reconstruction error:', rec_error)
 print('Outputing learned dictionary:', learned_dict.shape)
 
-np.save(out_dict, learned_dict)
+out_stat = {'mean': mean_shape, 'dict': learned_dict}
 
-# count the number of self-intersections
-total_counts = []
-for i in range(n_coeffs):
-    # for each shape basis, check every pair of edges in the polygon
-    temp_basis = learned_dict[i, :].reshape((n_vertices, 2))
-    temp_counts = 0
-    for j in range(n_vertices):
-        p1 = (temp_basis[j % n_vertices, 0], temp_basis[j % n_vertices, 1])
-        p2 = (temp_basis[(j + 1) % n_vertices, 0], temp_basis[(j + 1) % n_vertices, 1])
+f = open(out_dict, "wb")
+np.savez(f, dict=learned_dict, mean=mean_shape)
+f.close()
 
-        for k in range(j + 1, n_vertices):
-            p3 = (temp_basis[k % n_vertices, 0], temp_basis[k % n_vertices, 1])
-            p4 = (temp_basis[(k + 1) % n_vertices, 0], temp_basis[(k + 1) % n_vertices, 1])
-
-            if intersect(p1, p2, p3, p4):
-                temp_counts += 1
-
-    total_counts.append(temp_counts - n_vertices)
-
-print(total_counts)
-print('Total intersections: {}, average {}'.format(sum(total_counts), np.mean(total_counts)))
+# # count the number of self-intersections
+# total_counts = []
+# for i in range(n_coeffs):
+#     # for each shape basis, check every pair of edges in the polygon
+#     temp_basis = learned_dict[i, :].reshape((n_vertices, 2))
+#     temp_counts = 0
+#     for j in range(n_vertices):
+#         p1 = (temp_basis[j % n_vertices, 0], temp_basis[j % n_vertices, 1])
+#         p2 = (temp_basis[(j + 1) % n_vertices, 0], temp_basis[(j + 1) % n_vertices, 1])
+#
+#         for k in range(j + 1, n_vertices):
+#             p3 = (temp_basis[k % n_vertices, 0], temp_basis[k % n_vertices, 1])
+#             p4 = (temp_basis[(k + 1) % n_vertices, 0], temp_basis[(k + 1) % n_vertices, 1])
+#
+#             if intersect(p1, p2, p3, p4):
+#                 temp_counts += 1
+#
+#     total_counts.append(temp_counts - n_vertices)
+#
+# print(total_counts)
+# print('Total intersections: {}, average {}'.format(sum(total_counts), np.mean(total_counts)))

@@ -3,6 +3,55 @@ import matplotlib.pyplot as plt
 from scipy.spatial import distance
 import cv2
 from pycocotools import mask as cocomask
+from skimage import measure
+
+
+def close_contour(contour):
+    if not np.array_equal(contour[0], contour[-1]):
+        contour = np.vstack((contour, contour[0]))
+    return contour
+
+
+def get_connected_polys_with_measure(polygons, img_hw, n_vertices, closing_max_kernel=50, tolerance=0):
+    h_img, w_img = img_hw
+    rles = cocomask.frPyObjects(polygons, h_img, w_img)
+    rle = cocomask.merge(rles)  # ['counts'].decode('ascii')
+    m = cocomask.decode(rle)  # draw mask on binary image
+    padded_binary_mask = np.pad(m, pad_width=1, mode='constant', constant_values=0)
+    if len(polygons) > 1:
+        pads = 5
+        while True:
+            kernel = np.ones((pads, pads), np.uint8)
+            bg_closed = cv2.morphologyEx(padded_binary_mask, cv2.MORPH_CLOSE, kernel)
+            obj_contours = measure.find_contours(bg_closed, 0.5)
+            if len(obj_contours) > 1:
+                pads += 5
+            else:
+                contour = np.clip(np.subtract(obj_contours[0], 1), a_min=0, a_max=None)  # recover the original contours without padding
+                contour = close_contour(contour)
+                contour = measure.approximate_polygon(contour, tolerance)
+                # if len(contour) < 3:  # reduce to a line segment
+                #     continue
+                contour = np.flip(contour, axis=1)
+                return np.ndarray.flatten(contour).tolist()
+
+            if pads > closing_max_kernel:
+                obj_contours = sorted(obj_contours, key=cv2.contourArea)
+                contour = np.clip(np.subtract(obj_contours[-1], 1), a_min=0, a_max=None)
+                contour = close_contour(contour)
+                contour = measure.approximate_polygon(contour, tolerance)
+                contour = np.flip(contour, axis=1)
+                return np.ndarray.flatten(contour).tolist()  # The largest piece
+
+    else:
+        obj_contours = measure.find_contours(padded_binary_mask, 0.5)
+        contour = np.clip(np.subtract(obj_contours[0], 1), a_min=0, a_max=None)  # recover the original contours without padding
+        contour = close_contour(contour)
+        contour = measure.approximate_polygon(contour, tolerance)
+        # if len(contour) < 3:  # reduce to a line segment
+        #     continue
+        contour = np.flip(contour, axis=1)
+        return np.ndarray.flatten(contour).tolist()
 
 
 def get_connected_polygon_with_mask(polygons, img_hw, n_vertices, closing_max_kernel=50):
@@ -137,6 +186,129 @@ def get_connected_polygon(polygons, img_hw, closing_max_kernel=50):
     else:
         # continue
         return polygons[0]
+
+
+def uniform_sample_segment(pgtnp_px2, newpnum):
+    pnum, cnum = pgtnp_px2.shape
+    assert cnum == 2
+
+    idxnext_p = (np.arange(pnum - 1, dtype=np.int32) + 1) % pnum
+    pgtnext_px2 = pgtnp_px2[idxnext_p]
+    pgtnp_px2 = pgtnp_px2[:-1]
+    pnum = pnum - 1
+    edgelen_p = np.sqrt(np.sum((pgtnext_px2 - pgtnp_px2) ** 2, axis=1))
+    edgeidxsort_p = np.argsort(edgelen_p)
+
+    edgenum = np.round(edgelen_p * newpnum / np.sum(edgelen_p)).astype(np.int32)
+    for i in range(pnum):
+        if edgenum[i] == 0:
+            edgenum[i] = 1
+
+    # after round, it may has 1 or 2 mismatch
+    edgenumsum = np.sum(edgenum)
+    if edgenumsum != newpnum:
+
+        if edgenumsum > newpnum:
+
+            id = -1
+            passnum = edgenumsum - newpnum
+            while passnum > 0:
+                edgeid = edgeidxsort_p[id]
+                if edgenum[edgeid] > passnum:
+                    edgenum[edgeid] -= passnum
+                    passnum -= passnum
+                else:
+                    passnum -= edgenum[edgeid] - 1
+                    edgenum[edgeid] -= edgenum[edgeid] - 1
+                    id -= 1
+        else:
+            id = -1
+            edgeid = edgeidxsort_p[id]
+            edgenum[edgeid] += newpnum - edgenumsum
+
+    assert np.sum(edgenum) == newpnum
+
+    psample = []
+    for i in range(pnum):
+        pb_1x2 = pgtnp_px2[i:i + 1]
+        pe_1x2 = pgtnext_px2[i:i + 1]
+
+        pnewnum = edgenum[i]
+        wnp_kx1 = np.arange(edgenum[i], dtype=np.float32).reshape(-1, 1) / edgenum[i]
+
+        pmids = pb_1x2 * (1 - wnp_kx1) + pe_1x2 * wnp_kx1
+        psample.append(pmids)
+
+    psamplenp = np.concatenate(psample, axis=0)
+    return psamplenp
+
+
+def uniformsample(pgtnp_px2, newpnum):
+    pnum, cnum = pgtnp_px2.shape
+    assert cnum == 2
+
+    idxnext_p = (np.arange(pnum, dtype=np.int32) + 1) % pnum
+    pgtnext_px2 = pgtnp_px2[idxnext_p]
+    edgelen_p = np.sqrt(np.sum((pgtnext_px2 - pgtnp_px2) ** 2, axis=1))
+    edgeidxsort_p = np.argsort(edgelen_p)
+
+    # two cases
+    # we need to remove gt points
+    # we simply remove shortest paths
+    if pnum > newpnum:
+        edgeidxkeep_k = edgeidxsort_p[pnum - newpnum:]
+        edgeidxsort_k = np.sort(edgeidxkeep_k)
+        pgtnp_kx2 = pgtnp_px2[edgeidxsort_k]
+        assert pgtnp_kx2.shape[0] == newpnum
+        return pgtnp_kx2
+    # we need to add gt points
+    # we simply add it uniformly
+    else:
+        if np.sum(edgelen_p) < 1e-6:
+            print(pgtnp_px2, pgtnp_px2.shape)
+            exit()
+        edgenum = np.round(edgelen_p * newpnum / np.sum(edgelen_p)).astype(np.int32)
+        for i in range(pnum):
+            if edgenum[i] == 0:
+                edgenum[i] = 1
+
+        # after round, it may has 1 or 2 mismatch
+        edgenumsum = np.sum(edgenum)
+        if edgenumsum != newpnum:
+
+            if edgenumsum > newpnum:
+
+                id = -1
+                passnum = edgenumsum - newpnum
+                while passnum > 0:
+                    edgeid = edgeidxsort_p[id]
+                    if edgenum[edgeid] > passnum:
+                        edgenum[edgeid] -= passnum
+                        passnum -= passnum
+                    else:
+                        passnum -= edgenum[edgeid] - 1
+                        edgenum[edgeid] -= edgenum[edgeid] - 1
+                        id -= 1
+            else:
+                id = -1
+                edgeid = edgeidxsort_p[id]
+                edgenum[edgeid] += newpnum - edgenumsum
+
+        assert np.sum(edgenum) == newpnum
+
+        psample = []
+        for i in range(pnum):
+            pb_1x2 = pgtnp_px2[i:i + 1]
+            pe_1x2 = pgtnext_px2[i:i + 1]
+
+            pnewnum = edgenum[i]
+            wnp_kx1 = np.arange(edgenum[i], dtype=np.float32).reshape(-1, 1) / edgenum[i]
+
+            pmids = pb_1x2 * (1 - wnp_kx1) + pe_1x2 * wnp_kx1
+            psample.append(pmids)
+
+        psamplenp = np.concatenate(psample, axis=0)
+        return psamplenp
 
 
 def closest_node(node, nodes):

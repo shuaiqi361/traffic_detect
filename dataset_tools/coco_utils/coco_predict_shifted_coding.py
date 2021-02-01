@@ -6,6 +6,7 @@ from dataset_tools.coco_utils.utils import check_clockwise_polygon
 import numpy as np
 import cv2
 import json
+import pickle
 import matplotlib.pyplot as plt
 from scipy.signal import resample
 from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
@@ -20,13 +21,14 @@ def encode_mask(mask):
 
 
 num_vertices = 32
-alpha = 0.1
+alpha = 0.01
 n_coeffs = 64
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'val2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
 dictFile = '{}/dictionary/train_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
+statFile = '{}/dictionary/train_stat_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)  # code mean and std
 learned_dict = np.load(dictFile)
 
 coco = COCO(annFile)

@@ -21,13 +21,14 @@ def encode_mask(mask):
 
 
 num_vertices = 64
-alpha = 0.005
-n_coeffs = 96
+alpha = 0.7
+n_coeffs = 64
+code_gen_alpha = 0.7
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'val2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
-dictFile = '{}/dictionary/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
+dictFile = '{}/dictionary/train_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
 # statFile = '{}/dictionary/train_stat_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)  # code mean and std
 learned_dict = np.load(dictFile)
 
@@ -63,8 +64,6 @@ for annotation in all_anns:
     if annotation['image_id'] not in all_img_ids:
         all_img_ids.append(annotation['image_id'])
 
-    # polygons = get_connected_polygon_with_mask(annotation['segmentation'], (h_img, w_img),
-    #                                            n_vertices=num_vertices, closing_max_kernel=50)
     if len(annotation['segmentation']) > 1:
         obj_contours = [np.array(s).reshape((-1, 2)).astype(np.int32) for s in annotation['segmentation']]
         obj_contours = sorted(obj_contours, key=cv2.contourArea)
@@ -79,12 +78,7 @@ for annotation in all_anns:
     cat_id = annotation['category_id']
     cat_name = coco.loadCats([cat_id])[0]['name']
 
-    # Downsample the contour to fix number of vertices
     fixed_contour = uniformsample(contour, num_vertices)
-    # if len(contour) > num_vertices:
-    #     fixed_contour = resample(contour, num=num_vertices)
-    # else:
-    #     fixed_contour = turning_angle_resample(contour, num_vertices)
 
     fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
     fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
@@ -111,23 +105,21 @@ for annotation in all_anns:
     # bbox_width, bbox_height = x2 - x1, y2 - y1
     # bbox = [x1, y1, bbox_width, bbox_height]
     # bbox_center = np.array([(x1 + x2) / 2., (y1 + y2) / 2.])
-    # shape_center = np.mean(indexed_shape, axis=0)
-
     shape_center = np.mean(indexed_shape, axis=0)
-    # norm_shape = (fixed_contour - np.array([gt_x1, gt_y1])) / np.array([gt_w, gt_h]) * 2 - 1
-    norm_shape = (fixed_contour - shape_center) / np.array([gt_w / 2., gt_h / 2.])
+
+    norm_shape = fixed_contour - shape_center
 
     # sparsing coding using pre-learned dict
-    learned_val_codes, _ = fast_ista(norm_shape.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=60)
+    learned_val_codes, _ = fast_ista(norm_shape.reshape((1, -1)), learned_dict, lmbda=code_gen_alpha, max_iter=60)
     recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((-1, 2))
-    recon_contour = recon_contour * np.array([gt_w / 2., gt_h / 2.]) + shape_center  # + np.array([gt_x1, gt_y1])
+    recon_contour = recon_contour + shape_center
 
     counts_codes.append(np.sum(learned_val_codes != 0))
 
-    x1, y1, x2, y2 = min(recon_contour[:, 0]), min(recon_contour[:, 1]), \
-                     max(recon_contour[:, 0]), max(recon_contour[:, 1])
-    bbox = [x1, y1, x2 - x1, y2 - y1]
-    bbox_out = list(map(lambda x: float("{:.2f}".format(x)), bbox))
+    # x1, y1, x2, y2 = min(recon_contour[:, 0]), min(recon_contour[:, 1]), \
+    #                  max(recon_contour[:, 0]), max(recon_contour[:, 1])
+    # bbox = [x1, y1, x2 - x1, y2 - y1]
+    bbox_out = list(map(lambda x: float("{:.2f}".format(x)), gt_bbox))
     det = {
         'image_id': annotation['image_id'],
         'category_id': cat_id,
@@ -139,10 +131,9 @@ for annotation in all_anns:
     # visualize reconstructed resampled points in image
     # img = cv2.imread(image_name)
     # cv2.polylines(img, [recon_contour.astype(np.int32)], True, (0, 0, 255))
-    # # cv2.polylines(img, [fixed_contour.astype(np.int32)], True, (0, 0, 255))
     # cv2.imshow('Poly', img)
     # cv2.waitKey()
-    #
+
     # fig = plt.figure()
     # plt.hist(learned_val_codes[0], bins=100, color='g', alpha=0.5)
     # plt.xlabel('Coefficients')
@@ -170,20 +161,17 @@ with open('{}/results/{}_scaled_seg_results_v{}.json'.format(dataDir, dataType, 
     json.dump(seg_results, f_seg)
 
 # run COCO detection evaluation
-print('Running COCO detection val17 evaluation ...')
-coco_pred = coco.loadRes('{}/results/{}_scaled_det_results_v{}.json'.format(dataDir, dataType, num_vertices))
-imgIds = sorted(coco.getImgIds())
-coco_eval = COCOeval(coco, coco_pred, 'bbox')
-coco_eval.params.imgIds = imgIds
-coco_eval.evaluate()
-coco_eval.accumulate()
-coco_eval.summarize()
+# print('Running COCO detection val17 evaluation ...')
+# coco_pred = coco.loadRes('{}/results/{}_scaled_det_results_v{}.json'.format(dataDir, dataType, num_vertices))
+# coco_eval = COCOeval(coco, coco_pred, 'bbox')
+# coco_eval.evaluate()
+# coco_eval.accumulate()
+# coco_eval.summarize()
 
 print('---------------------------------------------------------------------------------')
 print('Running COCO segmentation val17 evaluation ...')
 coco_pred = coco.loadRes('{}/results/{}_scaled_seg_results_v{}.json'.format(dataDir, dataType, num_vertices))
 coco_eval = COCOeval(coco, coco_pred, 'segm')
-coco_eval.params.imgIds = imgIds
 coco_eval.evaluate()
 coco_eval.accumulate()
 coco_eval.summarize()

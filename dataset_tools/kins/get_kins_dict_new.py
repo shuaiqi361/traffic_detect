@@ -1,6 +1,6 @@
 from pycocotools.coco import COCO
 import numpy as np
-from dataset_tools.coco_utils.utils import check_clockwise_polygon
+from dataset_tools.coco_utils.utils import check_clockwise_polygon, uniformsample, close_contour
 from sparse_coding.utils import fast_ista, iterative_dict_learning_fista
 import random
 import cv2
@@ -14,18 +14,19 @@ from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_
     get_connected_polygon_with_mask
 
 n_vertices = 32  # predefined number of polygonal vertices
-n_coeffs = 128
+n_coeffs = 64
 alpha = 0.1
 
-dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
-dataType = 'train2017'
-annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
+src_root = '/media/keyi/Data/Research/traffic/data/KINS'
+src_img_path = "/media/keyi/Data/Research/traffic/data/KINS/data_object_image_2/training/image_2"
+src_gt_path = "/media/keyi/Data/Research/traffic/data/KINS/tools/update_train_2020.json"
+coco = COCO(src_gt_path)
 
-save_data_root = os.path.join(dataDir, 'dictionary')
-out_dict = '{}/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(save_data_root, n_vertices, n_coeffs, alpha)
-out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_root, n_vertices)
+save_data_root = os.path.join(src_root, 'dictionary')
+out_dict = '{}/train_dict_kins_v{}_n{}_a{:.2f}.npy'.format(save_data_root, n_vertices, n_coeffs, alpha)
+out_resampled_shape_file = '{}/train_kins_norm_data_v{}.npy'.format(save_data_root, n_vertices)
 
-# coco = COCO(annFile)
+# coco = COCO(src_gt_path)
 # cats = coco.loadCats(coco.getCatIds())
 # nms = [cat['name'] for cat in cats]
 # catIds = coco.getCatIds(catNms=nms)
@@ -41,72 +42,69 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 # COCO_original_shape_objects = []  # all objects
 # COCO_resample_shape_matrix = np.zeros(shape=(0, n_vertices * 2))
 # for annotation in all_anns:
-#     if random.random() > 0.4:  # randomly skip 70% of the objects
-#         continue
+#     # if random.random() > 0.9:  # randomly skip 70% of the objects
+#     #     continue
 #     counter_total += 1
 #
 #     if counter_total % 10000 == 0:
 #         print('Processing {}/{} ...', counter_total, len(all_anns))
-#     if annotation['iscrowd'] == 1:
-#         counter_iscrowd += 1
-#         continue
 #
 #     img = coco.loadImgs(annotation['image_id'])[0]
-#     image_name = '%s/images/%s/%s' % (dataDir, dataType, img['file_name'])
+#     image_path = os.path.join(src_img_path, img['file_name'])
 #     w_img = img['width']
 #     h_img = img['height']
 #     if w_img < 1 or h_img < 1:
 #         continue
 #
-#     if len(annotation['segmentation']) > 1:
+#     if annotation['a_area'] < 300:
 #         continue
 #
-#     polygons = annotation['segmentation'][0]
-#     gt_bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
+#     polygons = annotation['a_segm'][0]
+#
+#     gt_bbox = annotation['a_bbox']  # top-left corner coordinates, width and height convention
 #     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
 #     cat_id = annotation['category_id']
 #     cat_name = coco.loadCats([cat_id])[0]['name']
 #
-#     # obj = {'image_name': image_name, 'polygons': polygons, 'bbox': bbox, 'cat_name': cat_name}
-#     # COCO_original_shape_objects.append(obj)
-#
-#     if len(polygons) < 32 * 2:
-#         counter_poor += 1
+#     # if cat_name == 'car' and random.random() > 0.5:
+#     #     continue
+#     if cat_name == 'person-siting':
 #         continue
-#     else:
-#         counter_valid += 1  # valid shape extracted
 #
 #     # construct data matrix
 #     contour = np.array(polygons).reshape((-1, 2))
+#     fixed_contour = uniformsample(contour, n_vertices)
 #
-#     # Flip if the polygon is not sorted in clockwise order
-#     canonic_contour = resample(contour, num=n_vertices)
-#     clockwise_flag = check_clockwise_polygon(canonic_contour)
+#     clockwise_flag = check_clockwise_polygon(fixed_contour)
 #     if not clockwise_flag:
-#         canonic_contour = np.flip(canonic_contour, axis=0)
+#         canonic_contour = np.flip(fixed_contour, axis=0)
+#     else:
+#         canonic_contour = fixed_contour.copy()
 #
 #     # Indexing from the left-most vertex
 #     idx = np.argmin(canonic_contour[:, 0])
 #     canonic_contour = np.concatenate((canonic_contour[idx:, :], canonic_contour[:idx, :]), axis=0)
 #
-#     canonic_contour[:, 0] = np.clip(canonic_contour[:, 0], gt_x1, gt_x1 + gt_w)
-#     canonic_contour[:, 1] = np.clip(canonic_contour[:, 1], gt_y1, gt_y1 + gt_h)
+#     # canonic_contour[:, 0] = np.clip(canonic_contour[:, 0], gt_x1, gt_x1 + gt_w)
+#     # canonic_contour[:, 1] = np.clip(canonic_contour[:, 1], gt_y1, gt_y1 + gt_h)
 #
 #     # Normalize the shapes
-#     shape_center = np.mean(canonic_contour, axis=0)
-#     norm_shape = (canonic_contour - shape_center) / np.array([gt_w / 2., gt_h / 2.])
+#     contour_mean = np.mean(canonic_contour, axis=0)
+#     contour_std = np.sqrt(np.sum(np.std(canonic_contour, axis=0) ** 2))
+#     norm_shape = (canonic_contour - contour_mean) / contour_std
 #
 #     # draw re-sampled points
 #     # fig = plt.figure()
-#     # plt.title(cat_name)
-#     # plt.plot(indexed_shape[:, 0], indexed_shape[:, 1], '-o', c='C0', lw=3)
-#     # plt.text(indexed_shape[0, 0], indexed_shape[0, 1], '0', fontsize=8)
-#     # plt.text(indexed_shape[1, 0], indexed_shape[1, 1], '1', fontsize=8)
+#     # # closed_c = close_contour(norm_shape)
+#     # plt.title(cat_name + '_{}'.format(cat_id))
+#     # plt.plot(norm_shape[:, 0], -norm_shape[:, 1], '-o', c='C0', lw=3)
+#     # plt.text(norm_shape[0, 0], -norm_shape[0, 1], '0', fontsize=8)
+#     # plt.text(norm_shape[-1, 0], -norm_shape[-1, 1], '-1', fontsize=8)
 #     # plt.show()
 #
 #     COCO_resample_shape_matrix = np.concatenate((COCO_resample_shape_matrix, norm_shape.reshape((1, -1))), axis=0)
 #
-#     if len(COCO_resample_shape_matrix) >= 50000:
+#     if len(COCO_resample_shape_matrix) >= 40000:
 #         break
 #
 #
@@ -125,8 +123,8 @@ n_shapes, n_feats = shape_data.shape
 learned_dict, learned_codes, losses, error = iterative_dict_learning_fista(shape_data,
                                                                     n_components=n_coeffs,
                                                                     alpha=alpha,
-                                                                    batch_size=500,
-                                                                    n_iter=500)
+                                                                    batch_size=400,
+                                                                    n_iter=400)
 
 
 print('Training error: ', error)
@@ -134,6 +132,16 @@ rec_error = 0.5 * linalg.norm(np.matmul(learned_codes, learned_dict) - shape_dat
 print('Training Reconstruction error:', rec_error)
 print('Outputing learned dictionary:', learned_dict.shape)
 
+# sort the learned basis functions according to the average frequency
+# code_frequency = np.count_nonzero(learned_codes, axis=0)
+# idx_codes = np.argsort(code_frequency)[::-1]  # sort the learned basis according to the frequency of each code
+# print('Code frequency:', len(code_frequency), 'sorted code frequency: ', code_frequency[idx_codes])
+
+avg_codes = np.mean(np.abs(learned_codes), axis=0)
+idx_codes = np.argsort(avg_codes)[::-1]  # sort the learned basis according to the average coefficients
+print('Code Magnitudes:', len(avg_codes), 'sorted code magnitude: ', avg_codes[idx_codes])
+
+learned_dict = learned_dict[idx_codes]
 np.save(out_dict, learned_dict)
 
 # count the number of self-intersections

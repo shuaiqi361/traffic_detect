@@ -10,7 +10,7 @@ import pickle
 import matplotlib.pyplot as plt
 from scipy.signal import resample
 from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
-    get_connected_polygon_with_mask, uniformsample
+    get_connected_polygon_with_mask
 
 
 def encode_mask(mask):
@@ -20,16 +20,21 @@ def encode_mask(mask):
     return rle
 
 
-num_vertices = 64
-alpha = 0.005
-n_coeffs = 96
+num_vertices = 32
+alpha = 0.01
+n_coeffs = 64
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'val2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
-dictFile = '{}/dictionary/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
+dictFile = '{}/dictionary/train_pca_components_v{}_n{}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
 # statFile = '{}/dictionary/train_stat_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)  # code mean and std
-learned_dict = np.load(dictFile)
+f = open(dictFile, "rb")
+npz = np.load(f)
+print(npz, npz.files)
+mean_shape = npz['mean']
+learned_dict = npz['dict']
+f.close()
 
 coco = COCO(annFile)
 
@@ -47,6 +52,7 @@ counts_codes = []
 det_results = []
 seg_results = []
 all_img_ids = []
+pca_stat = {}
 
 for annotation in all_anns:
     if annotation['iscrowd'] == 1 or type(annotation['segmentation']) != list:
@@ -63,15 +69,8 @@ for annotation in all_anns:
     if annotation['image_id'] not in all_img_ids:
         all_img_ids.append(annotation['image_id'])
 
-    # polygons = get_connected_polygon_with_mask(annotation['segmentation'], (h_img, w_img),
-    #                                            n_vertices=num_vertices, closing_max_kernel=50)
-    if len(annotation['segmentation']) > 1:
-        obj_contours = [np.array(s).reshape((-1, 2)).astype(np.int32) for s in annotation['segmentation']]
-        obj_contours = sorted(obj_contours, key=cv2.contourArea)
-        polygons = obj_contours[-1]
-    else:
-        polygons = annotation['segmentation'][0]
-
+    polygons = get_connected_polygon_with_mask(annotation['segmentation'], (h_img, w_img),
+                                               n_vertices=num_vertices, closing_max_kernel=50)
     gt_bbox = annotation['bbox']
     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
     contour = np.array(polygons).reshape((-1, 2))
@@ -80,11 +79,10 @@ for annotation in all_anns:
     cat_name = coco.loadCats([cat_id])[0]['name']
 
     # Downsample the contour to fix number of vertices
-    fixed_contour = uniformsample(contour, num_vertices)
-    # if len(contour) > num_vertices:
-    #     fixed_contour = resample(contour, num=num_vertices)
-    # else:
-    #     fixed_contour = turning_angle_resample(contour, num_vertices)
+    if len(contour) > num_vertices:
+        fixed_contour = resample(contour, num=num_vertices)
+    else:
+        fixed_contour = turning_angle_resample(contour, num_vertices)
 
     fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
     fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
@@ -111,16 +109,14 @@ for annotation in all_anns:
     # bbox_width, bbox_height = x2 - x1, y2 - y1
     # bbox = [x1, y1, bbox_width, bbox_height]
     # bbox_center = np.array([(x1 + x2) / 2., (y1 + y2) / 2.])
-    # shape_center = np.mean(indexed_shape, axis=0)
-
     shape_center = np.mean(indexed_shape, axis=0)
-    # norm_shape = (fixed_contour - np.array([gt_x1, gt_y1])) / np.array([gt_w, gt_h]) * 2 - 1
-    norm_shape = (fixed_contour - shape_center) / np.array([gt_w / 2., gt_h / 2.])
+
+    norm_shape = fixed_contour - shape_center
 
     # sparsing coding using pre-learned dict
-    learned_val_codes, _ = fast_ista(norm_shape.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=60)
-    recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((-1, 2))
-    recon_contour = recon_contour * np.array([gt_w / 2., gt_h / 2.]) + shape_center  # + np.array([gt_x1, gt_y1])
+    learned_val_codes = np.matmul(norm_shape.reshape((1, -1)) - mean_shape.reshape((1, -1)), learned_dict.T)
+    recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((-1, 2)) + mean_shape.reshape((-1, 2))
+    recon_contour = recon_contour + shape_center
 
     counts_codes.append(np.sum(learned_val_codes != 0))
 
@@ -137,17 +133,16 @@ for annotation in all_anns:
     det_results.append(det)
 
     # visualize reconstructed resampled points in image
-    # img = cv2.imread(image_name)
-    # cv2.polylines(img, [recon_contour.astype(np.int32)], True, (0, 0, 255))
-    # # cv2.polylines(img, [fixed_contour.astype(np.int32)], True, (0, 0, 255))
-    # cv2.imshow('Poly', img)
-    # cv2.waitKey()
-    #
-    # fig = plt.figure()
-    # plt.hist(learned_val_codes[0], bins=100, color='g', alpha=0.5)
-    # plt.xlabel('Coefficients')
-    # plt.title('Sparse Coding of a {}'.format(cat_name))
-    # plt.show()
+    img = cv2.imread(image_name)
+    cv2.polylines(img, [recon_contour.astype(np.int32)], True, (0, 0, 255))
+    cv2.imshow('Poly', img)
+    cv2.waitKey()
+
+    fig = plt.figure()
+    plt.hist(learned_val_codes[0], bins=100, color='g', alpha=0.5)
+    plt.xlabel('Coefficients')
+    plt.title('PCA')
+    plt.show()
 
     # convert polygons to rle masks
     poly = np.ndarray.flatten(recon_contour, order='C').tolist()  # row major flatten

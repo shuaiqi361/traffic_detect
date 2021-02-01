@@ -11,11 +11,11 @@ from scipy.signal import resample
 from scipy import linalg
 from dataset_tools.coco_utils.utils import intersect
 from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
-    get_connected_polygon_with_mask
+    get_connected_polygon_with_mask, uniformsample
 
 n_vertices = 32  # predefined number of polygonal vertices
-n_coeffs = 128
-alpha = 0.1
+n_coeffs = 64
+alpha = 0.01
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'
@@ -41,8 +41,10 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 # COCO_original_shape_objects = []  # all objects
 # COCO_resample_shape_matrix = np.zeros(shape=(0, n_vertices * 2))
 # for annotation in all_anns:
-#     if random.random() > 0.4:  # randomly skip 70% of the objects
+#     if annotation['iscrowd'] == 1 or type(annotation['segmentation']) != list:
 #         continue
+#     # if random.random() > 0.4:  # randomly skip 70% of the objects
+#     #     continue
 #     counter_total += 1
 #
 #     if counter_total % 10000 == 0:
@@ -51,6 +53,8 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #         counter_iscrowd += 1
 #         continue
 #
+#     if len(annotation['segmentation']) > 1:
+#         continue
 #     img = coco.loadImgs(annotation['image_id'])[0]
 #     image_name = '%s/images/%s/%s' % (dataDir, dataType, img['file_name'])
 #     w_img = img['width']
@@ -58,10 +62,17 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #     if w_img < 1 or h_img < 1:
 #         continue
 #
-#     if len(annotation['segmentation']) > 1:
-#         continue
-#
 #     polygons = annotation['segmentation'][0]
+#     # if len(annotation['segmentation']) > 1:
+#     #     obj_contours = [np.array(s).reshape((-1, 2)).astype(np.int32) for s in annotation['segmentation']]
+#     #     obj_contours = sorted(obj_contours, key=cv2.contourArea)
+#     #     polygons = obj_contours[-1]
+#     #     # print(obj_contours[-1])
+#     #     # print([cv2.contourArea(s) for s in obj_contours])
+#     #     # exit()
+#     # else:
+#     #     polygons = annotation['segmentation'][0]
+#
 #     gt_bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
 #     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
 #     cat_id = annotation['category_id']
@@ -70,17 +81,20 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #     # obj = {'image_name': image_name, 'polygons': polygons, 'bbox': bbox, 'cat_name': cat_name}
 #     # COCO_original_shape_objects.append(obj)
 #
-#     if len(polygons) < 32 * 2:
-#         counter_poor += 1
-#         continue
-#     else:
-#         counter_valid += 1  # valid shape extracted
+#     # if len(polygons) < 32 * 2:
+#     #     counter_poor += 1
+#     #     continue
+#     # else:
+#     #     counter_valid += 1  # valid shape extracted
 #
 #     # construct data matrix
 #     contour = np.array(polygons).reshape((-1, 2))
+#     if cv2.contourArea(contour.astype(np.int32)) < 150 or len(contour) < 16:
+#         continue
 #
 #     # Flip if the polygon is not sorted in clockwise order
-#     canonic_contour = resample(contour, num=n_vertices)
+#     canonic_contour = uniformsample(contour, n_vertices)
+#
 #     clockwise_flag = check_clockwise_polygon(canonic_contour)
 #     if not clockwise_flag:
 #         canonic_contour = np.flip(canonic_contour, axis=0)
@@ -106,7 +120,7 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #
 #     COCO_resample_shape_matrix = np.concatenate((COCO_resample_shape_matrix, norm_shape.reshape((1, -1))), axis=0)
 #
-#     if len(COCO_resample_shape_matrix) >= 50000:
+#     if len(COCO_resample_shape_matrix) >= 40000:
 #         break
 #
 #

@@ -105,13 +105,13 @@ for annotation in all_anns:
     reconstructed_gt_polygon = recon_contour.copy()
 
     # show the learned code distribution
-    # fig = plt.figure()
-    # plt.plot(np.arange(n_coeffs), learned_val_codes.reshape((-1,)), color='green',
-    #          marker='o', linestyle='dashed', linewidth=2, markersize=6)
-    # plt.ylabel('Value of each coefficient')
-    # plt.xlabel('All {} coefficients'.format(n_coeffs))
-    # plt.title('Distribution of GT coefficients for {}'.format(cat_name))
-    # plt.show()
+    fig = plt.figure()
+    plt.plot(np.arange(n_coeffs), learned_val_codes.reshape((-1,)), color='green',
+             marker='o', linestyle='dashed', linewidth=2, markersize=6)
+    plt.ylabel('Value of each coefficient')
+    plt.xlabel('All {} coefficients'.format(n_coeffs))
+    plt.title('Distribution of GT coefficients for {}'.format(cat_name))
+    plt.show()
 
     print('image id', annotation['image_id'])
 
