@@ -7,7 +7,6 @@ import cv2
 import copy
 import matplotlib.pyplot as plt
 import os
-from scipy.signal import resample
 from scipy import linalg
 from dataset_tools.coco_utils.utils import intersect
 from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
@@ -15,15 +14,16 @@ from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_
 
 n_vertices = 128  # predefined number of polygonal vertices
 n_coeffs = 64
-alpha = 0.001
+alpha = 0.01
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
 
 save_data_root = os.path.join(dataDir, 'dictionary')
-out_dict = '{}/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(save_data_root, n_vertices, n_coeffs, alpha)
-out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_root, n_vertices)
+# out_dict = '{}/train_whiten_dict_v{}_n{}_a{:.2f}.npy'.format(save_data_root, n_vertices, n_coeffs, alpha)
+out_resampled_shape_file = '{}/train_whiten_data_v{}.npy'.format(save_data_root, n_vertices)
+out_dict_stats = '{}/train_whiten_stats_v{}_n{}_a{:.2f}.npz'.format(save_data_root, n_vertices, n_coeffs, alpha)  # contain other values, e.g. means, vars, ...
 
 # coco = COCO(annFile)
 # cats = coco.loadCats(coco.getCatIds())
@@ -39,6 +39,7 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 # counter_poor = 0  # objects too small to extract the shape
 #
 # COCO_original_shape_objects = []  # all objects
+# COCO_resample_shape_list = []
 # COCO_resample_shape_matrix = np.zeros(shape=(0, n_vertices * 2))
 # for annotation in all_anns:
 #     if annotation['iscrowd'] == 1 or type(annotation['segmentation']) != list:
@@ -72,20 +73,16 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #     #     # exit()
 #     # else:
 #     #     polygons = annotation['segmentation'][0]
-#
-#     gt_bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
-#     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
-#     cat_id = annotation['category_id']
-#     cat_name = coco.loadCats([cat_id])[0]['name']
-#
-#     # obj = {'image_name': image_name, 'polygons': polygons, 'bbox': bbox, 'cat_name': cat_name}
-#     # COCO_original_shape_objects.append(obj)
-#
 #     if len(polygons) < 32 * 2:
 #         counter_poor += 1
 #         continue
 #     else:
 #         counter_valid += 1  # valid shape extracted
+#
+#     gt_bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
+#     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
+#     cat_id = annotation['category_id']
+#     cat_name = coco.loadCats([cat_id])[0]['name']
 #
 #     # construct data matrix
 #     contour = np.array(polygons).reshape((-1, 2))
@@ -103,33 +100,28 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #     idx = np.argmin(canonic_contour[:, 0])
 #     canonic_contour = np.concatenate((canonic_contour[idx:, :], canonic_contour[:idx, :]), axis=0)
 #
-#     canonic_contour[:, 0] = np.clip(canonic_contour[:, 0], gt_x1, gt_x1 + gt_w)
-#     canonic_contour[:, 1] = np.clip(canonic_contour[:, 1], gt_y1, gt_y1 + gt_h)
+#     # canonic_contour[:, 0] = np.clip(canonic_contour[:, 0], gt_x1, gt_x1 + gt_w)
+#     # canonic_contour[:, 1] = np.clip(canonic_contour[:, 1], gt_y1, gt_y1 + gt_h)
 #
-#     # updated_bbox = [np.min(fixed_contour[:, 0]), np.min(fixed_contour[:, 1]),
-#     #                 np.max(fixed_contour[:, 0]), np.max(fixed_contour[:, 1])]
+#     updated_bbox = [np.min(canonic_contour[:, 0]), np.min(canonic_contour[:, 1]),
+#                     np.max(canonic_contour[:, 0]), np.max(canonic_contour[:, 1])]
 #     updated_width = np.max(canonic_contour[:, 0]) - np.min(canonic_contour[:, 0])
 #     updated_height = np.max(canonic_contour[:, 1]) - np.min(canonic_contour[:, 1])
 #
 #     # Normalize the shapes
-#     shape_center = np.mean(canonic_contour, axis=0)
-#     norm_shape = (canonic_contour - shape_center) / np.array([updated_width / 2., updated_height / 2.])
+#     shifted_shape = canonic_contour - np.array([updated_bbox[0], updated_bbox[1]])
+#     norm_shape = shifted_shape / np.array([updated_width, updated_height])
 #
-#     # draw re-sampled points
-#     # fig = plt.figure()
-#     # plt.title(cat_name)
-#     # plt.plot(canonic_contour[:, 0], -canonic_contour[:, 1], '-o', c='C0', lw=2)
-#     # plt.plot(contour[:, 0], -contour[:, 1], '--o', c='r', lw=1)
-#     # for i in range(n_vertices):
-#     #     plt.text(canonic_contour[i, 0], -canonic_contour[i, 1], '{}'.format(i), fontsize=11)
-#     # # plt.text(indexed_shape[1, 0], indexed_shape[1, 1], '1', fontsize=8)
-#     # plt.show()
+#     assert np.max(norm_shape[:, 0]) == 1 and np.max(norm_shape[:, 1]) == 1
+#     assert np.min(norm_shape[:, 0]) == 0 and np.min(norm_shape[:, 1]) == 0
 #
-#     COCO_resample_shape_matrix = np.concatenate((COCO_resample_shape_matrix, norm_shape.reshape((1, -1))), axis=0)
+#     COCO_resample_shape_list.append(norm_shape.reshape((1, -1)))
 #
-#     if len(COCO_resample_shape_matrix) >= 40000:
-#         break
+#     # if len(COCO_resample_shape_list) >= 100000:
+#     #     break
 #
+# COCO_resample_shape_matrix = np.concatenate(COCO_resample_shape_list, axis=0)
+# # assert COCO_resample_shape_matrix.shape[0] == 80000 and COCO_resample_shape_matrix.shape[1] == n_vertices * 2
 #
 # print('Total valid shape: ', counter_valid)
 # print('Poor shape: ', counter_poor)
@@ -139,23 +131,41 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 # np.save(out_resampled_shape_file, COCO_resample_shape_matrix)
 
 # Start learning the dictionary
-shape_data = np.load(out_resampled_shape_file)
+shape_data = np.load(out_resampled_shape_file).astype(np.float32)
 print('Loading train2017 coco shape data: ', shape_data.shape)
 n_shapes, n_feats = shape_data.shape
 
-learned_dict, learned_codes, losses, error = iterative_dict_learning_fista(shape_data,
+# First whitening the shapes by zca
+# print('Start performing zero component analysis ...')
+shape_mean = np.mean(shape_data, axis=0)
+shape_std = np.std(shape_data, axis=0) + 1e-5
+X_norm = (shape_data - shape_mean) / shape_std
+print('Normalization finished, data shape:', X_norm.shape)
+
+# cov = np.cov(X_norm, rowvar=False)
+# U, S, V = np.linalg.svd(cov)  # U:(256, 256), S:(256,)
+# epsilon = 0.1
+# X_ZCA = U.dot(np.diag(1.0/np.sqrt(S + epsilon))).dot(U.T).dot(X_norm.T).T
+
+# print('ZCA finished, shape_zca shape:', X_ZCA.shape)
+
+learned_dict, learned_codes, losses, error = iterative_dict_learning_fista(X_norm,
                                                                     n_components=n_coeffs,
                                                                     alpha=alpha,
-                                                                    batch_size=500,
+                                                                    batch_size=400,
                                                                     n_iter=500)
 
 
 print('Training error: ', error)
-rec_error = 0.5 * linalg.norm(np.matmul(learned_codes, learned_dict) - shape_data) ** 2 / shape_data.shape[0]
+rec_error = 0.5 * linalg.norm(np.matmul(learned_codes, learned_dict) * shape_std + shape_mean - shape_data) ** 2 / shape_data.shape[0]
 print('Training Reconstruction error:', rec_error)
 print('Outputing learned dictionary:', learned_dict.shape)
 
-np.save(out_dict, learned_dict)
+# np.save(out_dict, learned_dict)
+np.savez(out_dict_stats,
+         dictionary=learned_dict,
+         mean=shape_mean,
+         std=shape_std)
 
 # count the number of self-intersections
 total_counts = []

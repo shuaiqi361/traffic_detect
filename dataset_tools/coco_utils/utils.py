@@ -264,9 +264,9 @@ def uniformsample(pgtnp_px2, newpnum):
     # we need to add gt points
     # we simply add it uniformly
     else:
-        if np.sum(edgelen_p) < 1e-6:
-            print(pgtnp_px2, pgtnp_px2.shape)
-            exit()
+        # if np.sum(edgelen_p) < 1e-6:
+        #     print(pgtnp_px2, pgtnp_px2.shape)
+        #     exit()
         edgenum = np.round(edgelen_p * newpnum / np.sum(edgelen_p)).astype(np.int32)
         for i in range(pnum):
             if edgenum[i] == 0:
@@ -275,9 +275,7 @@ def uniformsample(pgtnp_px2, newpnum):
         # after round, it may has 1 or 2 mismatch
         edgenumsum = np.sum(edgenum)
         if edgenumsum != newpnum:
-
             if edgenumsum > newpnum:
-
                 id = -1
                 passnum = edgenumsum - newpnum
                 while passnum > 0:
@@ -301,7 +299,7 @@ def uniformsample(pgtnp_px2, newpnum):
             pb_1x2 = pgtnp_px2[i:i + 1]
             pe_1x2 = pgtnext_px2[i:i + 1]
 
-            pnewnum = edgenum[i]
+            # pnewnum = edgenum[i]
             wnp_kx1 = np.arange(edgenum[i], dtype=np.float32).reshape(-1, 1) / edgenum[i]
 
             pmids = pb_1x2 * (1 - wnp_kx1) + pe_1x2 * wnp_kx1

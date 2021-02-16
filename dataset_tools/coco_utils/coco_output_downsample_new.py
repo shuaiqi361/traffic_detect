@@ -18,11 +18,11 @@ def encode_mask(mask):
 
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
-dataType = 'train2017'
+dataType = 'val2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
 coco = COCO(annFile)
 
-num_vertices = 64
+num_vertices = 128
 
 # Load all annotations
 cats = coco.loadCats(coco.getCatIds())
@@ -61,8 +61,8 @@ for annotation in all_anns:
         polygons = annotation['segmentation'][0]
 
     contour = np.array(polygons).reshape((-1, 2))
-    if cv2.contourArea(contour.astype(np.int32)) > 50:
-        continue
+    # if cv2.contourArea(contour.astype(np.int32)) > 50:
+    #     continue
 
     bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
     gt_x1, gt_y1, gt_w, gt_h = bbox
@@ -75,9 +75,9 @@ for annotation in all_anns:
     # fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
     # fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
 
-    # x1, y1, x2, y2 = min(fixed_contour[:, 0]), min(fixed_contour[:, 1]), \
-    #                  max(fixed_contour[:, 0]), max(fixed_contour[:, 1])
-    # bbox = [x1, y1, x2 - x1, y2 - y1]
+    x1, y1, x2, y2 = min(fixed_contour[:, 0]), min(fixed_contour[:, 1]), \
+                     max(fixed_contour[:, 0]), max(fixed_contour[:, 1])
+    bbox = [x1, y1, x2 - x1, y2 - y1]
     bbox_out = list(map(lambda x: float("{:.2f}".format(x)), bbox))
     det = {
         'image_id': annotation['image_id'],
@@ -88,20 +88,20 @@ for annotation in all_anns:
     det_results.append(det)
 
     # visualize resampled points in image side by side
-    print('contour {} : {} -- area {:.2f}'.format(len(contour), len(fixed_contour), cv2.contourArea(contour.astype(np.int32))))
-    img = cv2.imread(image_name)
-    img_ref = cv2.imread(image_name)
-    img_final = cv2.imread(image_name)
-    cv2.polylines(img_ref, [contour.astype(np.int32)], True, (10, 10, 255), thickness=1)
-    for point in contour.astype(np.int32):
-        cv2.circle(img_ref, tuple(point), 3, (0, 0, 255))
-    # cv2.polylines(img, [fixed_contour_.astype(np.int32)], True, (10, 10, 255), thickness=2)
-    cv2.polylines(img_final, [fixed_contour.astype(np.int32)], True, (10, 10, 255), thickness=1)
-    for point in fixed_contour.astype(np.int32):
-        cv2.circle(img_final, tuple(point), 3, (0, 0, 255))
-    im_cat = np.concatenate((img_ref, img_final), axis=1)
-    cv2.imshow('Poly Original vs. Resampled vs Aligned', im_cat)
-    cv2.waitKey()
+    # print('contour {} : {} -- area {:.2f}'.format(len(contour), len(fixed_contour), cv2.contourArea(contour.astype(np.int32))))
+    # img = cv2.imread(image_name)
+    # img_ref = cv2.imread(image_name)
+    # img_final = cv2.imread(image_name)
+    # cv2.polylines(img_ref, [contour.astype(np.int32)], True, (10, 10, 255), thickness=1)
+    # for point in contour.astype(np.int32):
+    #     cv2.circle(img_ref, tuple(point), 3, (0, 0, 255))
+    # # cv2.polylines(img, [fixed_contour_.astype(np.int32)], True, (10, 10, 255), thickness=2)
+    # cv2.polylines(img_final, [fixed_contour.astype(np.int32)], True, (10, 10, 255), thickness=1)
+    # for point in fixed_contour.astype(np.int32):
+    #     cv2.circle(img_final, tuple(point), 3, (0, 0, 255))
+    # im_cat = np.concatenate((img_ref, img_final), axis=1)
+    # cv2.imshow('Poly Original vs. Resampled vs Aligned', im_cat)
+    # cv2.waitKey()
 
     # convert polygons to rle masks
     poly = np.ndarray.flatten(fixed_contour, order='C').tolist()  # row major flatten
@@ -124,14 +124,14 @@ with open('{}/results/{}_seg_results_v{}.json'.format(dataDir, dataType, num_ver
     json.dump(seg_results, f_seg)
 
 # run COCO detection evaluation
-# print('Running COCO detection val17 evaluation ...')
-# coco_pred = coco.loadRes('{}/results/{}_det_results_v{}.json'.format(dataDir, dataType, num_vertices))
-# imgIds = sorted(coco.getImgIds())
-# coco_eval = COCOeval(coco, coco_pred, 'bbox')
-# coco_eval.params.imgIds = imgIds
-# coco_eval.evaluate()
-# coco_eval.accumulate()
-# coco_eval.summarize()
+print('Running COCO detection val17 evaluation ...')
+coco_pred = coco.loadRes('{}/results/{}_det_results_v{}.json'.format(dataDir, dataType, num_vertices))
+imgIds = sorted(coco.getImgIds())
+coco_eval = COCOeval(coco, coco_pred, 'bbox')
+coco_eval.params.imgIds = imgIds
+coco_eval.evaluate()
+coco_eval.accumulate()
+coco_eval.summarize()
 
 print('---------------------------------------------------------------------------------')
 print('Running COCO segmentation val17 evaluation ...')

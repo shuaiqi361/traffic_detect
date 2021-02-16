@@ -27,9 +27,12 @@ n_coeffs = 64
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'val2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
-dictFile = '{}/dictionary/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
-# statFile = '{}/dictionary/train_stat_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)  # code mean and std
-learned_dict = np.load(dictFile)
+# dictFile = '{}/dictionary/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
+statFile = '{}/dictionary/train_whiten_stats_v{}_n{}_a{:.2f}.npz'.format(dataDir, num_vertices, n_coeffs, alpha)  # code mean and std
+with np.load(statFile) as data_meta:
+    learned_dict = data_meta['dictionary']
+    shape_mean = data_meta['mean']
+    shape_std = data_meta['std']
 
 coco = COCO(annFile)
 
@@ -63,8 +66,6 @@ for annotation in all_anns:
     if annotation['image_id'] not in all_img_ids:
         all_img_ids.append(annotation['image_id'])
 
-    # polygons = get_connected_polygon_with_mask(annotation['segmentation'], (h_img, w_img),
-    #                                            n_vertices=num_vertices, closing_max_kernel=50)
     if len(annotation['segmentation']) > 1:
         obj_contours = [np.array(s).reshape((-1, 2)).astype(np.int32) for s in annotation['segmentation']]
         obj_contours = sorted(obj_contours, key=cv2.contourArea)
@@ -81,13 +82,6 @@ for annotation in all_anns:
 
     # Downsample the contour to fix number of vertices
     fixed_contour = uniformsample(contour, num_vertices)
-    # if len(contour) > num_vertices:
-    #     fixed_contour = resample(contour, num=num_vertices)
-    # else:
-    #     fixed_contour = turning_angle_resample(contour, num_vertices)
-
-    fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
-    fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
 
     clockwise_flag = check_clockwise_polygon(fixed_contour)
     if not clockwise_flag:
@@ -123,16 +117,21 @@ for annotation in all_anns:
     # bbox_center = np.array([(x1 + x2) / 2., (y1 + y2) / 2.])
     # shape_center = np.mean(indexed_shape, axis=0)
 
+    updated_bbox = [np.min(indexed_shape[:, 0]), np.min(indexed_shape[:, 1]),
+                    np.max(indexed_shape[:, 0]), np.max(indexed_shape[:, 1])]
     updated_width = np.max(indexed_shape[:, 0]) - np.min(indexed_shape[:, 0])
     updated_height = np.max(indexed_shape[:, 1]) - np.min(indexed_shape[:, 1])
 
-    shape_center = np.mean(indexed_shape, axis=0)
-    norm_shape = (indexed_shape - shape_center) / np.array([updated_width / 2., updated_height / 2.])
+    shifted_shape = indexed_shape - np.array([updated_bbox[0], updated_bbox[1]])
+    norm_shape = shifted_shape / np.array([updated_width, updated_height])
+
+    # normalize across shapes in the training set
+    norm_shape = (norm_shape.reshape((1, -1)) - shape_mean) / shape_std
 
     # sparsing coding using pre-learned dict
-    learned_val_codes, _ = fast_ista(norm_shape.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=80)
-    recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((-1, 2))
-    recon_contour = recon_contour * np.array([updated_width / 2., updated_height / 2.]) + shape_center  # + np.array([gt_x1, gt_y1])
+    learned_val_codes, _ = fast_ista(norm_shape, learned_dict, lmbda=alpha, max_iter=80)
+    recon_contour = np.matmul(learned_val_codes, learned_dict) * shape_std + shape_mean
+    recon_contour = recon_contour.reshape((-1, 2)) * np.array([updated_width, updated_height]) + np.array([updated_bbox[0], updated_bbox[1]])
 
     counts_codes.append(np.sum(learned_val_codes != 0))
 
@@ -151,12 +150,12 @@ for annotation in all_anns:
     # visualize reconstructed resampled points in image
     # img = cv2.imread(image_name)
     # cv2.polylines(img, [recon_contour.astype(np.int32)], True, (0, 0, 255))
-    # # cv2.polylines(img, [fixed_contour.astype(np.int32)], True, (0, 0, 255))
+    # cv2.polylines(img, [indexed_shape.astype(np.int32)], True, (0, 255, 0))
     # cv2.imshow('Poly', img)
     # cv2.waitKey()
     #
     # fig = plt.figure()
-    # plt.hist(learned_val_codes[0], bins=100, color='g', alpha=0.5)
+    # plt.hist(learned_val_codes[0], bins=50, color='g', alpha=0.5)
     # plt.xlabel('Coefficients')
     # plt.title('Sparse Coding of a {}'.format(cat_name))
     # plt.show()
