@@ -267,7 +267,7 @@ def uniformsample(pgtnp_px2, newpnum):
         # if np.sum(edgelen_p) < 1e-6:
         #     print(pgtnp_px2, pgtnp_px2.shape)
         #     exit()
-        edgenum = np.round(edgelen_p * newpnum / np.sum(edgelen_p)).astype(np.int32)
+        edgenum = np.floor(edgelen_p * newpnum / np.sum(edgelen_p)).astype(np.int32)
         for i in range(pnum):
             if edgenum[i] == 0:
                 edgenum[i] = 1

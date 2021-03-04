@@ -13,16 +13,16 @@ from dataset_tools.coco_utils.utils import intersect
 from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
     get_connected_polygon_with_mask, uniformsample
 
-n_vertices = 128  # predefined number of polygonal vertices
-n_coeffs = 64
-alpha = 0.001
+n_vertices = 360  # predefined number of polygonal vertices
+n_coeffs = 256
+alpha = 0.01
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
 
 save_data_root = os.path.join(dataDir, 'dictionary')
-out_dict = '{}/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(save_data_root, n_vertices, n_coeffs, alpha)
+out_dict = '{}/train_scaled_ranked_dict_v{}_n{}_a{:.2f}.npy'.format(save_data_root, n_vertices, n_coeffs, alpha)
 out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_root, n_vertices)
 
 # coco = COCO(annFile)
@@ -39,12 +39,16 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 # counter_poor = 0  # objects too small to extract the shape
 #
 # COCO_original_shape_objects = []  # all objects
-# COCO_resample_shape_matrix = np.zeros(shape=(0, n_vertices * 2))
+# n_classes = 80
+# counter_max = {}  # ensure that shapes from all categories are equally drawn
+# shape_per_cat = 500
+#
+# COCO_resample_shape_matrix = []
 # for annotation in all_anns:
 #     if annotation['iscrowd'] == 1 or type(annotation['segmentation']) != list:
 #         continue
-#     # if random.random() > 0.4:  # randomly skip 70% of the objects
-#     #     continue
+#     if sum([c for _, c in counter_max.items()]) == shape_per_cat * n_classes:
+#         break
 #     counter_total += 1
 #
 #     if counter_total % 10000 == 0:
@@ -53,8 +57,9 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #         counter_iscrowd += 1
 #         continue
 #
-#     if len(annotation['segmentation']) > 1:
+#     if annotation['area'] < 150 or len(annotation['segmentation']) > 1:
 #         continue
+#
 #     img = coco.loadImgs(annotation['image_id'])[0]
 #     image_name = '%s/images/%s/%s' % (dataDir, dataType, img['file_name'])
 #     w_img = img['width']
@@ -73,24 +78,31 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #     # else:
 #     #     polygons = annotation['segmentation'][0]
 #
-#     gt_bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
-#     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
+#     # gt_bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
+#     # gt_x1, gt_y1, gt_w, gt_h = gt_bbox
+#     gt_shape = np.array(polygons).reshape((-1, 2))
+#     gt_x1, gt_y1, gt_x2, gt_y2 = int(np.min(gt_shape[:, 0])), int(np.min(gt_shape[:, 1])), \
+#                                  int(np.max(gt_shape[:, 0])), int(np.max(gt_shape[:, 1]))
+#     gt_w, gt_h = gt_x2 - gt_x1, gt_y2 - gt_y1
+#
 #     cat_id = annotation['category_id']
 #     cat_name = coco.loadCats([cat_id])[0]['name']
 #
-#     # obj = {'image_name': image_name, 'polygons': polygons, 'bbox': bbox, 'cat_name': cat_name}
-#     # COCO_original_shape_objects.append(obj)
-#
-#     if len(polygons) < 32 * 2:
-#         counter_poor += 1
-#         continue
+#     if cat_name not in counter_max.keys():
+#         counter_max[cat_name] = 1
 #     else:
-#         counter_valid += 1  # valid shape extracted
+#         if counter_max[cat_name] == shape_per_cat:
+#             continue
+#         counter_max[cat_name] += 1
+#
+#     # if len(polygons) < 32 * 2:
+#     #     counter_poor += 1
+#     #     continue
+#     # else:
+#     #     counter_valid += 1  # valid shape extracted
 #
 #     # construct data matrix
 #     contour = np.array(polygons).reshape((-1, 2))
-#     # if cv2.contourArea(contour.astype(np.int32)) < 150 or len(contour) < 16:
-#     #     continue
 #
 #     # Flip if the polygon is not sorted in clockwise order
 #     canonic_contour = uniformsample(contour, n_vertices)
@@ -103,8 +115,8 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #     idx = np.argmin(canonic_contour[:, 0])
 #     canonic_contour = np.concatenate((canonic_contour[idx:, :], canonic_contour[:idx, :]), axis=0)
 #
-#     canonic_contour[:, 0] = np.clip(canonic_contour[:, 0], gt_x1, gt_x1 + gt_w)
-#     canonic_contour[:, 1] = np.clip(canonic_contour[:, 1], gt_y1, gt_y1 + gt_h)
+#     # canonic_contour[:, 0] = np.clip(canonic_contour[:, 0], gt_x1, gt_x1 + gt_w)
+#     # canonic_contour[:, 1] = np.clip(canonic_contour[:, 1], gt_y1, gt_y1 + gt_h)
 #
 #     # updated_bbox = [np.min(fixed_contour[:, 0]), np.min(fixed_contour[:, 1]),
 #     #                 np.max(fixed_contour[:, 0]), np.max(fixed_contour[:, 1])]
@@ -125,12 +137,10 @@ out_resampled_shape_file = '{}/train_scaled_norm_data_v{}.npy'.format(save_data_
 #     # # plt.text(indexed_shape[1, 0], indexed_shape[1, 1], '1', fontsize=8)
 #     # plt.show()
 #
-#     COCO_resample_shape_matrix = np.concatenate((COCO_resample_shape_matrix, norm_shape.reshape((1, -1))), axis=0)
-#
-#     if len(COCO_resample_shape_matrix) >= 40000:
-#         break
+#     COCO_resample_shape_matrix.append(norm_shape.reshape((1, -1)).astype(np.float16))
 #
 #
+# COCO_resample_shape_matrix = np.concatenate(COCO_resample_shape_matrix, axis=0)
 # print('Total valid shape: ', counter_valid)
 # print('Poor shape: ', counter_poor)
 # print('Is crowd: ', counter_iscrowd)
@@ -146,8 +156,8 @@ n_shapes, n_feats = shape_data.shape
 learned_dict, learned_codes, losses, error = iterative_dict_learning_fista(shape_data,
                                                                     n_components=n_coeffs,
                                                                     alpha=alpha,
-                                                                    batch_size=500,
-                                                                    n_iter=500)
+                                                                    batch_size=400,
+                                                                    n_iter=400)
 
 
 print('Training error: ', error)
@@ -155,13 +165,19 @@ rec_error = 0.5 * linalg.norm(np.matmul(learned_codes, learned_dict) - shape_dat
 print('Training Reconstruction error:', rec_error)
 print('Outputing learned dictionary:', learned_dict.shape)
 
-np.save(out_dict, learned_dict)
+# rank the codes from the highest activation to lowest
+avg_codes = np.mean(np.abs(learned_codes), axis=0)
+idx_codes = np.argsort(avg_codes)[::-1]  # sort the learned basis according to the average coefficients
+print('Code Magnitudes:', len(avg_codes), 'sorted code magnitude: ', avg_codes[idx_codes])
+
+ranked_dict = learned_dict[idx_codes, :]
+np.save(out_dict, ranked_dict)
 
 # count the number of self-intersections
 total_counts = []
 for i in range(n_coeffs):
     # for each shape basis, check every pair of edges in the polygon
-    temp_basis = learned_dict[i, :].reshape((n_vertices, 2))
+    temp_basis = ranked_dict[i, :].reshape((n_vertices, 2))
     temp_counts = 0
     for j in range(n_vertices):
         p1 = (temp_basis[j % n_vertices, 0], temp_basis[j % n_vertices, 1])

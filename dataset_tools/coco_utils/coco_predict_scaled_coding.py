@@ -20,14 +20,14 @@ def encode_mask(mask):
     return rle
 
 
-num_vertices = 128
+num_vertices = 360
 alpha = 0.01
-n_coeffs = 64
+n_coeffs = 256
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'val2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
-dictFile = '{}/dictionary/train_scaled_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
+dictFile = '{}/dictionary/train_scaled_ranked_dict_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)
 # statFile = '{}/dictionary/train_stat_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)  # code mean and std
 learned_dict = np.load(dictFile)
 
@@ -47,7 +47,7 @@ counts_codes = []
 det_results = []
 seg_results = []
 all_img_ids = []
-
+mean_IoUs = []
 for annotation in all_anns:
     if annotation['iscrowd'] == 1 or type(annotation['segmentation']) != list:
         continue
@@ -72,8 +72,13 @@ for annotation in all_anns:
     else:
         polygons = annotation['segmentation'][0]
 
-    gt_bbox = annotation['bbox']
-    gt_x1, gt_y1, gt_w, gt_h = gt_bbox
+    # gt_bbox = annotation['bbox']
+    # gt_x1, gt_y1, gt_w, gt_h = gt_bbox
+    gt_shape = np.array(polygons).reshape((-1, 2))
+    gt_x1, gt_y1, gt_x2, gt_y2 = int(np.min(gt_shape[:, 0])), int(np.min(gt_shape[:, 1])), \
+                                 int(np.max(gt_shape[:, 0])), int(np.max(gt_shape[:, 1]))
+    gt_w, gt_h = gt_x2 - gt_x1, gt_y2 - gt_y1
+
     contour = np.array(polygons).reshape((-1, 2))
 
     cat_id = annotation['category_id']
@@ -86,8 +91,8 @@ for annotation in all_anns:
     # else:
     #     fixed_contour = turning_angle_resample(contour, num_vertices)
 
-    fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
-    fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
+    # fixed_contour[:, 0] = np.clip(fixed_contour[:, 0], gt_x1, gt_x1 + gt_w)
+    # fixed_contour[:, 1] = np.clip(fixed_contour[:, 1], gt_y1, gt_y1 + gt_h)
 
     clockwise_flag = check_clockwise_polygon(fixed_contour)
     if not clockwise_flag:
@@ -130,7 +135,7 @@ for annotation in all_anns:
     norm_shape = (indexed_shape - shape_center) / np.array([updated_width / 2., updated_height / 2.])
 
     # sparsing coding using pre-learned dict
-    learned_val_codes, _ = fast_ista(norm_shape.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=80)
+    learned_val_codes, _ = fast_ista(norm_shape.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=100)
     recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((-1, 2))
     recon_contour = recon_contour * np.array([updated_width / 2., updated_height / 2.]) + shape_center  # + np.array([gt_x1, gt_y1])
 
@@ -161,12 +166,21 @@ for annotation in all_anns:
     # plt.title('Sparse Coding of a {}'.format(cat_name))
     # plt.show()
 
+    poly = np.ndarray.flatten(contour, order='C').tolist()  # row major flatten
+    original_rles = cocomask.frPyObjects([poly], h_img, w_img)
+    rle = cocomask.merge(original_rles)
+    m = cocomask.decode(rle)
+    rle_original = cocomask.encode(m.astype(np.uint8))
+
     # convert polygons to rle masks
     poly = np.ndarray.flatten(recon_contour, order='C').tolist()  # row major flatten
     rles = cocomask.frPyObjects([poly], h_img, w_img)
     rle = cocomask.merge(rles)
     m = cocomask.decode(rle)
     rle_new = encode_mask(m.astype(np.uint8))
+
+    iou = cocomask.iou([rle_new], [rle_original], [annotation['iscrowd']])
+    mean_IoUs.append(iou[0][0])
 
     seg = {
         'image_id': annotation['image_id'],
@@ -201,3 +215,4 @@ coco_eval.accumulate()
 coco_eval.summarize()
 
 print('Average active codes: ', np.mean(counts_codes) / n_coeffs)
+print('Average mIoU of all instances: ', np.mean(mean_IoUs))
