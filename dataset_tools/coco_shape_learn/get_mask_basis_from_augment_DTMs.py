@@ -17,17 +17,16 @@ from dataset_tools.coco_utils.utils import turning_angle_resample, get_connected
     get_connected_polys_with_measure, close_contour
 
 mask_size = 28
-n_vertices = 180
-n_coeffs = 256
-alpha = 0.3
+n_coeffs = 512
+alpha = 0.1
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
 
 save_data_root = os.path.join(dataDir, 'sparse_shape_dict')
-out_dict = '{}/mask_fromMask_basis_m{}_n{}_a{:.2f}.npy'.format(save_data_root, mask_size, n_coeffs, alpha)
-out_resampled_shape_file = '{}/train_mask_basis_fromMask_m{}.npy'.format(save_data_root, mask_size)
+out_dict = '{}/mask_fromDTM_augment_basis_m{}_n{}_a{:.2f}.npy'.format(save_data_root, mask_size, n_coeffs, alpha)
+out_resampled_shape_file = '{}/train_mask_basis_augment_fromDTM_m{}.npy'.format(save_data_root, mask_size)
 
 
 def encode_mask(mask):
@@ -54,7 +53,6 @@ def encode_mask(mask):
 # shape_per_cat = 600
 #
 # COCO_original_shape_objects = []  # all objects
-# # COCO_resample_shape_matrix = np.zeros(shape=(0, n_vertices * 2))
 # COCO_resample_shape_matrix = []
 # for annotation in all_anns:
 #     if sum([c for _, c in counter_max.items()]) == shape_per_cat * n_classes:
@@ -82,6 +80,10 @@ def encode_mask(mask):
 #     # if the current shape reach its max in the counter list, skip
 #     cat_id = annotation['category_id']
 #     cat_name = coco.loadCats([cat_id])[0]['name']
+#
+#     # if cat_name != 'giraffe':
+#     #     continue
+#
 #     if cat_name not in counter_max.keys():
 #         counter_max[cat_name] = 1
 #     else:
@@ -89,29 +91,56 @@ def encode_mask(mask):
 #             continue
 #         counter_max[cat_name] += 1
 #
-#     # if len(annotation['segmentation']) > 1:
-#     #     obj_contours = [np.array(s).reshape((-1, 2)).astype(np.int32) for s in annotation['segmentation']]
-#     #     obj_contours = sorted(obj_contours, key=cv2.contourArea)
-#     #     polygons = obj_contours[-1]
-#     # else:
-#     #     polygons = annotation['segmentation'][0]
-#
 #     gt_bbox = annotation['bbox']  # top-left corner coordinates, width and height convention
 #     gt_x1, gt_y1, gt_w, gt_h = gt_bbox
+#     gt_x1, gt_y1, gt_w, gt_h = [int(ss) for ss in gt_bbox]
+#     if gt_w < 2 or gt_h < 2:
+#         continue
 #
-#     rles = cocomask.frPyObjects(annotation['segmentation'], h_img, w_img)
-#     rle = cocomask.merge(rles)  # ['counts'].decode('ascii')
-#     m = cocomask.decode(rle).astype(np.uint8) * 255  # in image domain
-#     # m = np.zeros((h_img, w_img), dtype=np.uint8)
-#     # for poly in annotation['segmentation']:
-#     #     vertices = np.round(np.array(poly).reshape(1, -1, 2)).astype(np.int32)
-#     #     cv2.drawContours(m, vertices, color=255, contourIdx=-1, thickness=-1)
+#     original_rles = cocomask.frPyObjects(annotation['segmentation'], h_img, w_img)
+#     rle = cocomask.merge(original_rles)
+#     m = cocomask.decode(rle).astype(np.uint8)
 #
-#     m_bbox = m[int(gt_y1):int(gt_y1 + gt_h), int(gt_x1):int(gt_x1 + gt_w)]  # crop the mask according to the bbox
-#     # m_bbox = np.pad(m_bbox, 1, mode='constant')
+#     m_bbox = m[int(gt_y1):int(gt_y1 + gt_h), int(gt_x1):int(gt_x1 + gt_w)] * 255  # crop the mask according to the bbox
 #
-#     dist_bbox = cv2.resize(m_bbox, dsize=(mask_size, mask_size))  # rescale to fixed size masks
-#     dist_bbox = np.where(dist_bbox >= 255 * 0.5, 1, 0)
+#     resized_dist_bbox = cv2.resize(m_bbox, dsize=(mask_size, mask_size))
+#     resized_dist_bbox = np.where(resized_dist_bbox >= 255 * 0.5, 1, 0).astype(np.uint8)
+#
+#     obj_contours, _ = cv2.findContours(resized_dist_bbox, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+#     contour_map = np.zeros((mask_size, mask_size))
+#     for c in obj_contours:
+#         polygon = c.reshape((-1, 2))
+#         cv2.drawContours(contour_map, [polygon.astype(np.int32)], contourIdx=-1,
+#                          color=1, thickness=1)
+#
+#     dist_bbox_in = cv2.distanceTransform(resized_dist_bbox, distanceType=cv2.DIST_L2, maskSize=3)
+#     dist_bbox_in = dist_bbox_in / np.max(dist_bbox_in)
+#
+#     dist_bbox_in = np.where(contour_map == 1, contour_map, dist_bbox_in)
+#
+#     dist_bbox = np.where(dist_bbox_in > 0, dist_bbox_in, -1.)  # in the range of -1, (0, 1)
+#
+#     # assert dist_bbox.shape[0] == dist_bbox.shape[1] == mask_size
+#     # dist_bbox = (dist_bbox + 1) * 255 / 2.
+#     #
+#     # # Show the images and masks
+#     # dist_bbox_show = (dist_bbox > 0) * 255
+#     # dtm_show = dist_bbox_in * 255
+#     # # original_comp = np.concatenate([m_bbox * 255, dist_bbox.astype(np.uint8)], axis=1)
+#     # # cv2.imshow('original_comp', original_comp)
+#     # # recovered_mask = np.where(dist_bbox > 124, 255, 0).astype(np.uint8)
+#     # # original_comp = np.concatenate([resized_dist_bbox * 255, dist_bbox_show.astype(np.uint8), dtm_show.astype(np.uint8)], axis=1)
+#     # # cv2.imshow('resize', original_comp)
+#     # output_image = cv2.imread(image_name)
+#     # # bbox = [gt_x1, gt_y1, gt_x1 + gt_w, gt_y1 + gt_h]
+#     # # cv2.rectangle(output_image, pt1=(int(bbox[0]), int(bbox[1])),
+#     # #               pt2=(int(bbox[2]), int(bbox[3])),
+#     # #               color=(0, 255, 0), thickness=2)
+#     # cv2.imshow('image', output_image)
+#     # cv2.imshow('resize', resized_dist_bbox * 255)
+#     # cv2.imshow('aug dtm', dtm_show.astype(np.uint8))
+#     # if cv2.waitKey() & 0xFF == ord('q'):
+#     #     exit()
 #
 #     COCO_resample_shape_matrix.append(dist_bbox.reshape((1, -1)).astype(np.float16))
 #
@@ -130,10 +159,10 @@ print('Loading train2017 coco shape data: ', shape_data.shape)
 n_shapes, n_feats = shape_data.shape
 
 learned_dict, learned_codes, losses, error = iterative_dict_learning_fista(shape_data,
-                                                                    n_components=n_coeffs,
-                                                                    alpha=alpha,
-                                                                    batch_size=400,
-                                                                    n_iter=500)
+                                                                           n_components=n_coeffs,
+                                                                           alpha=alpha,
+                                                                           batch_size=400,
+                                                                           n_iter=500)
 
 
 print('Training error: ', error)

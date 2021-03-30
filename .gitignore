@@ -4,6 +4,13 @@ __pycache__/*
 *.npy
 *.jpg
 *.png
+*.json
+*.txt
+*.zip
+*.mkv
+*.mp4
+*.pyc
 dataset_tools/coco/*
 dataset_tools/detrac/*
 dataset_tools/similar_code/*
+dataset_tools/kins/demo/*

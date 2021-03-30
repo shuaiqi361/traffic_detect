@@ -18,8 +18,8 @@ from dataset_tools.coco_utils.utils import turning_angle_resample, get_connected
 
 mask_size = 28
 n_vertices = 180
-n_coeffs = 128
-alpha = 0.5
+n_coeffs = 256
+alpha = 0.3
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'
@@ -81,6 +81,7 @@ def encode_mask(mask):
 #     # if the current shape reach its max in the counter list, skip
 #     cat_id = annotation['category_id']
 #     cat_name = coco.loadCats([cat_id])[0]['name']
+#
 #     if cat_name not in counter_max.keys():
 #         counter_max[cat_name] = 1
 #     else:
@@ -110,18 +111,26 @@ def encode_mask(mask):
 #     dist_bbox = np.where(dist_bbox_in > 0, dist_bbox_in, -1.)  # in the range of -1, (0, 1)
 #
 #     assert dist_bbox.shape[0] == dist_bbox.shape[1] == mask_size
-#     # dist_bbox = (dist_bbox + 1) * 255 / 2.
+#     dist_bbox = (dist_bbox + 1) * 255 / 2.
 #
 #     # Show the images and masks
-#     # dist_bbox_show = (dist_bbox > 0) * 255
-#     # dtm_show = dist_bbox_in * 255
-#     # # original_comp = np.concatenate([m_bbox * 255, dist_bbox.astype(np.uint8)], axis=1)
-#     # # cv2.imshow('original_comp', original_comp)
-#     # # recovered_mask = np.where(dist_bbox > 124, 255, 0).astype(np.uint8)
+#     dist_bbox_show = (dist_bbox > 0) * 255
+#     dtm_show = dist_bbox_in * 255
+#     # original_comp = np.concatenate([m_bbox * 255, dist_bbox.astype(np.uint8)], axis=1)
+#     # cv2.imshow('original_comp', original_comp)
+#     # recovered_mask = np.where(dist_bbox > 124, 255, 0).astype(np.uint8)
 #     # original_comp = np.concatenate([resized_dist_bbox * 255, dist_bbox_show.astype(np.uint8), dtm_show.astype(np.uint8)], axis=1)
 #     # cv2.imshow('resize', original_comp)
-#     # if cv2.waitKey() & 0xFF == ord('q'):
-#     #     break
+#     output_image = cv2.imread(image_name)
+#     # bbox = [gt_x1, gt_y1, gt_x1 + gt_w, gt_y1 + gt_h]
+#     # cv2.rectangle(output_image, pt1=(int(bbox[0]), int(bbox[1])),
+#     #               pt2=(int(bbox[2]), int(bbox[3])),
+#     #               color=(0, 255, 0), thickness=2)
+#     cv2.imshow('image', output_image)
+#     cv2.imshow('resize', resized_dist_bbox * 255)
+#     cv2.imshow('dtm', dtm_show.astype(np.uint8))
+#     if cv2.waitKey() & 0xFF == ord('q'):
+#         exit()
 #
 #     COCO_resample_shape_matrix.append(dist_bbox.reshape((1, -1)).astype(np.float16))
 #

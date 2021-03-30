@@ -45,8 +45,8 @@ plt.plot(sparsity_weights, Ss[1], color='green', marker='*', linewidth=2, marker
 plt.plot(sparsity_weights, Ss[2], color='blue', marker='o', linewidth=2, markersize=8)
 plt.plot(sparsity_weights, Ss[3], color='magenta', marker='x', linewidth=2, markersize=8)
 
-plt.title('Reconstruction error lower bounds')
+plt.title('Coefficient sparsity')
 plt.legend(['32 Basis', '64 Basis', '128 Basis', '256 Basis'])
-plt.xlabel('Sparsity weights ' + r'$\lambda$')
+plt.xlabel('Sparsity weight ' + r'$\lambda$')
 plt.ylabel('Coefficient activation percentage')
 plt.show()

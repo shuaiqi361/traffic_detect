@@ -10,7 +10,7 @@ from matplotlib import gridspec
 
 mask_size = 28
 n_vertices = 180  # predefined number of polygonal vertices
-n_coeffs = 256
+n_coeffs = 64
 alpha = 0.50
 contour_closed = True
 
@@ -21,10 +21,8 @@ save_dict_root = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/
 # out_dict = '{}/mask_fromMask_basis_m{}_n{}_a{:.2f}.npy'.format(save_dict_root, mask_size, n_coeffs, alpha)
 out_dict = '{}/mask_fromDTM_minusone_basis_m{}_n{}_a{:.2f}.npy'.format(save_dict_root, mask_size, n_coeffs, alpha)
 learned_dict = np.load(out_dict)
-# with np.load(out_dict) as data_meta:
-#     learned_dict = data_meta['dictionary']
-#     shape_mean = data_meta['mean']
-#     shape_std = data_meta['std']
+
+
 
 fig = plt.figure(figsize=(n_atom_row * 4, n_atom_col * 4))
 
