@@ -19,7 +19,7 @@ from dataset_tools.coco_utils.utils import turning_angle_resample, get_connected
 mask_size = 48
 n_vertices = 180
 n_coeffs = 128
-alpha = 0.1
+alpha = 0.2
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'
@@ -76,7 +76,7 @@ for annotation in all_anns:
         continue
 
     # filter out small shapes and disconnected shapes for learning the dictionary
-    if annotation['area'] < 150:
+    if annotation['area'] < 100:
         continue
 
     # if the current shape reach its max in the counter list, skip
@@ -110,39 +110,41 @@ for annotation in all_anns:
         dist_bbox_in = np.zeros(shape=resized_dist_bbox.shape)
     else:
         dist_bbox_in = cv2.distanceTransform(resized_dist_bbox, distanceType=cv2.DIST_L2, maskSize=3)
-        dist_bbox_in = dist_bbox_in / np.max(dist_bbox_in)
+        # dist_bbox_in = dist_bbox_in / np.max(dist_bbox_in)
 
     if np.sum(1 - resized_dist_bbox) < 5:  # for background
         dist_bbox_out = np.zeros(shape=resized_dist_bbox.shape)
     else:
-        dist_bbox_out = cv2.distanceTransform(1 - resized_dist_bbox, distanceType=cv2.DIST_L2, maskSize=3)
-        dist_bbox_out = -dist_bbox_out / np.max(dist_bbox_out)
+        dist_bbox_out = cv2.distanceTransform(1 - resized_dist_bbox, distanceType=cv2.DIST_L2, maskSize=3) * -1
+        # dist_bbox_out = -dist_bbox_out / np.max(dist_bbox_out)
 
-    dist_bbox = (dist_bbox_in + dist_bbox_out + 1) / 2.  # in the range of -1, 1 --> 0, 1, boundary at 0.5
-    # dist_bbox = dist_bbox[1:-1, 1:-1]
+    dist_bbox = dist_bbox_in + dist_bbox_out
+    dist_bbox = dist_bbox / np.max(np.abs(dist_bbox))  #
+
     assert dist_bbox.shape[0] == dist_bbox.shape[1] == mask_size
     # dist_bbox = dist_bbox * 255  # / 2 + 255
 
     # Show the images and masks
-    # dist_bbox = dist_bbox * 255  # / 2 + 255 / 2
-    # # original_comp = np.concatenate([m_bbox * 255, dist_bbox.astype(np.uint8)], axis=1)
-    # # cv2.imshow('original_comp', original_comp)
-    # recovered_mask = np.where(dist_bbox >= 255 * 0.5, 255, 0).astype(np.uint8)
-    # original_comp = np.concatenate([resized_dist_bbox * 255, dist_bbox.astype(np.uint8), recovered_mask], axis=1)
-    # cv2.imshow('resize', original_comp)
-    # if cv2.waitKey() & 0xFF == ord('q'):
-    #     break
+    # dist_bbox = (dist_bbox + 1) / 2 * 255
+    # original_comp = np.concatenate([m_bbox * 255, dist_bbox.astype(np.uint8)], axis=1)
+    # cv2.imshow('original_comp', original_comp)
+    recovered_mask = np.where(dist_bbox >= 0, 255, 0).astype(np.uint8)
+    dist_bbox = (dist_bbox + 1) / 2 * 255
+    original_comp = np.concatenate([resized_dist_bbox * 255, dist_bbox.astype(np.uint8), recovered_mask], axis=1)
+    cv2.imshow('resize', original_comp)
+    if cv2.waitKey() & 0xFF == ord('q'):
+        exit()
 
     COCO_resample_shape_matrix.append(dist_bbox.reshape((1, -1)).astype(np.float16))
-
-COCO_resample_shape_matrix = np.concatenate(COCO_resample_shape_matrix, axis=0)
-print('Total valid shape: ', counter_valid)
-print('Poor shape: ', counter_poor)
-print('Is crowd: ', counter_iscrowd)
-print('Total number: ', counter_total)
-print('Size of shape matrix: ', COCO_resample_shape_matrix.shape)
-print('Length of the counter max:', len(counter_max))
-np.save(out_resampled_shape_file, COCO_resample_shape_matrix)
+#
+# COCO_resample_shape_matrix = np.concatenate(COCO_resample_shape_matrix, axis=0)
+# print('Total valid shape: ', counter_valid)
+# print('Poor shape: ', counter_poor)
+# print('Is crowd: ', counter_iscrowd)
+# print('Total number: ', counter_total)
+# print('Size of shape matrix: ', COCO_resample_shape_matrix.shape)
+# print('Length of the counter max:', len(counter_max))
+# np.save(out_resampled_shape_file, COCO_resample_shape_matrix)
 
 # Start learning the dictionary
 shape_data = np.load(out_resampled_shape_file)

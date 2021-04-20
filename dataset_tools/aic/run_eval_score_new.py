@@ -5,30 +5,32 @@ from dataset_tools.aic.utils import parseTXT, parseXLSX, compute_nwRMSE, compute
 from dataset_tools.aic import videoInfo
 
 
-NUM_SEGMENTS = 50
+NUM_SEGMENTS = 20
 GT_FOLDER = '/media/keyi/Data/Research/traffic/data/AIC2021/Baidu_results/gt'
-PRED_FOLDER = '/media/keyi/Data/Research/traffic/detection/traffic_detection/dataset_tools/aic/2080_yolo_track_4/tracks/'  # should be the outputs .txt files
-BASE_FACTOR = 0.473544  # 0.473544  # 2080 server # 0.406724  # Poorna's hardware # 0.428572  # Yufei's hardware
-total_execution_time = 7430  # specify total execution time of all 4 videos from yufei_result
+PRED_FILE = '/media/keyi/Data/Research/traffic/detection/traffic_detection/dataset_tools/aic/track1.txt'  # should be the outputs .txt files
+BASE_FACTOR = 0.428572  # Yufei's hardware
+total_execution_time = 77.126
 
 gt_filenames = os.listdir(GT_FOLDER)
-pred_filenames = os.listdir(PRED_FOLDER)
+with open(PRED_FILE, 'r') as f_pred:
+    pred_lines = f_pred.readlines()
 
-videos_to_be_eval = []  # evaluate predicted counts with existing gt
-all_predicted_video = []
-for pred in pred_filenames:
-    if pred.split('.')[-1] == 'txt':
-        video_name = pred.split('.')[0]
-        if video_name in videoInfo.keys() and video_name + '.xlsx' in gt_filenames:
-            videos_to_be_eval.append(video_name)
-        if video_name in videoInfo.keys():
-            all_predicted_video.append(video_name)
+# videos_to_be_eval = []  # evaluate predicted counts with existing gt
+# for pred in pred_filenames:
+#     if pred.split('.')[-1] == 'txt':
+#         video_name = pred.split('.')[0]
+#         if video_name in videoInfo.keys() and video_name + '.xlsx' in gt_filenames:
+#             videos_to_be_eval.append(video_name)
 
-num_video = len(videos_to_be_eval)
-nwRMSE_perVideo = np.zeros(num_video)
-vehicleCnt_perVideo = np.zeros(num_video)
-video_times = []
-print(videos_to_be_eval)
+# num_video = len(videos_to_be_eval)
+# nwRMSE_perVideo = np.zeros(num_video)
+# vehicleCnt_perVideo = np.zeros(num_video)
+# video_times = []
+
+
+for line in pred_lines:
+    elements = line.strip('\n').split(',')
+
 
 for vId in range(num_video):
     video_name = videos_to_be_eval[vId]
@@ -55,6 +57,7 @@ for vId in range(num_video):
     else:
         parseTXT(pred_file_path, pred_counts)
     print(np.sum(np.sum(pred_counts, axis=0), axis=1))
+    continue
 
     nwRMSE, vehicleCnt = compute_nwRMSE(NUM_SEGMENTS, pred_counts, gt_counts)
     vehicleCnt_perVideo[vId] = np.sum(vehicleCnt)
@@ -65,20 +68,13 @@ for vId in range(num_video):
 effectiveness_score = np.sum(nwRMSE_perVideo * vehicleCnt_perVideo) / np.sum(vehicleCnt_perVideo)
 print('Overall effectiveness score: {:.6f}'.format(effectiveness_score))
 
+total_frames = 0
+for k, v in videoInfo.items():
+    total_frames += v['frame_num']
 
-total_video_time = []
-total_video_frame = []
-for v in all_predicted_video:
-    t_ = videoInfo[v]['frame_num'] / videoInfo[v]['fps']
-    total_video_time.append(t_)
-    total_video_frame.append(videoInfo[v]['frame_num'])
-
-print('Total video time: ', sum(total_video_time))
-print('Total video frame: ', sum(total_video_frame))
-efficiency_score = compute_efficiency_score([total_execution_time], total_video_time, BASE_FACTOR)
-# efficiency_score = compute_efficiency_score([total_execution_time], [np.sum(video_times)], BASE_FACTOR)
+efficiency_score = compute_efficiency_score([total_execution_time], [np.sum(video_times)], BASE_FACTOR)
 print('Overall efficiency score: {:.6f}'.format(efficiency_score))
-# print('Overall fps {}, {} ms. per frame'.format())
+print('Overall fps {}, {} ms. per frame'.format())
 
 final_eval_score = 0.3 * efficiency_score + 0.7 * effectiveness_score
 

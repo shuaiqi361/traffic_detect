@@ -6,6 +6,7 @@ from math import sqrt, ceil
 from scipy import linalg
 from sklearn.utils.extmath import randomized_svd, row_norms
 from sklearn.utils import check_array, check_random_state, gen_even_slices, gen_batches, shuffle
+from sklearn.decomposition import PCA, MiniBatchDictionaryLearning
 
 
 def soft_thresholding(x, lm):
@@ -203,4 +204,26 @@ def iterative_dict_learning_fista(shapes, n_components, dict_init=None, alpha=0.
     print('Final Reconstruction error(frobenius norm): ', error)
 
     return dictionary, learned_codes, losses, error
+
+
+def learn_sparse_components(shapes, n_components, lmbda=0.1, batch_size=100, n_iter=1000, transform_algorithm='omp'):
+    """Learn sparse components from a dataset of shapes."""
+    n_shapes, n_feats = shapes.shape
+    # Learn sparse components and predict coefficients for the dataset
+    dict_learner = MiniBatchDictionaryLearning(n_components=n_components, alpha=lmbda, batch_size=batch_size,
+                                               n_iter=n_iter, transform_algorithm=transform_algorithm)
+    # dict_learner = MiniBatchDictionaryLearning(n_components=n_components, fit_algorithm='lars',
+    #                                            transform_algorithm='lars', batch_size=batch_size,
+    #                                            alpha=lmbda, transform_alpha=lmbda, n_iter=n_iter, positive_dict=True)
+    dicts = dict_learner.fit(shapes)  # n_samples, n_feats
+    learned_dict_ = dicts.components_  # n_coeffs, n_feats
+    learned_codes_ = dict_learner.transform(shapes)  # n_shapes, n_coeffs
+
+    # print('Dict learning... ', learned_dict_.shape, learned_codes_.shape)
+    # error_ = 0.5 * linalg.norm((np.matmul(learned_codes_,
+    #                                      learned_dict_) - shapes)) ** 2 + lmbda * linalg.norm(learned_codes_, 1)
+    # error_ /= n_shapes
+    # print('objective function: ', error_)
+
+    return learned_dict_, learned_codes_
 
