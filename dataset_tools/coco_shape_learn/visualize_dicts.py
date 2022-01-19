@@ -8,18 +8,21 @@ import os
 from dataset_tools.coco_utils.utils import close_contour
 
 mask_size = 28
-n_vertices = 360  # predefined number of polygonal vertices
-n_coeffs = 64
-alpha = 0.01
+n_coeffs = 128
+alpha = 0.2
 contour_closed = True
+dtm_type = 'standard'
 
 n_atom_row = int(np.sqrt(n_coeffs))
 n_atom_col = int(np.sqrt(n_coeffs))
 
 # save_dict_root = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17/sparse_shape_dict'
 # out_dict = '{}/single_fromMask_Dict_m{}_n{}_v{}_a{:.2f}.npy'.format(save_dict_root, mask_size, n_coeffs, n_vertices, alpha)
-save_dict_root = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17/dictionary'
-out_dict = '{}/train_scaled_ranked_dict_v{}_n{}_a{:.2f}.npy'.format(save_dict_root, n_vertices, n_coeffs, alpha)
+# save_dict_root = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17/dictionary'
+save_dict_root = '/media/keyi/Data/Research/traffic/data/cityscapes/dictionary'
+# save_dict_root = '/media/keyi/Data/Research/traffic/detection/AdelaiDet/adet/modeling/SparseDTMInst/dictionary'
+# out_dict = '{}/train_scaled_ranked_dict_v{}_n{}_a{:.2f}.npy'.format(save_dict_root, n_vertices, n_coeffs, alpha)
+out_dict = '{}/Cityscapes_{}_DTM_basis_m{}_n{}_a{:.2f}.npz'.format(save_dict_root, dtm_type, mask_size, n_coeffs, alpha)
 learned_dict = np.load(out_dict)
 # with np.load(out_dict) as data_meta:
 #     learned_dict = data_meta['dictionary']

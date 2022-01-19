@@ -7,9 +7,9 @@ from dataset_tools.aic import videoInfo
 
 NUM_SEGMENTS = 50
 GT_FOLDER = '/media/keyi/Data/Research/traffic/data/AIC2021/Baidu_results/gt'
-PRED_FOLDER = '/media/keyi/Data/Research/traffic/detection/traffic_detection/dataset_tools/aic/2080_yolo_track_4/tracks/'  # should be the outputs .txt files
+PRED_FOLDER = '/media/keyi/Data/Research/traffic/detection/traffic_detection/dataset_tools/aic/2080_track_hist_1/tracks/'  # should be the outputs .txt files
 BASE_FACTOR = 0.473544  # 0.473544  # 2080 server # 0.406724  # Poorna's hardware # 0.428572  # Yufei's hardware
-total_execution_time = 7430  # specify total execution time of all 4 videos from yufei_result
+total_execution_time = 6505.4  # specify total execution time of all 4 videos from yufei_result
 
 gt_filenames = os.listdir(GT_FOLDER)
 pred_filenames = os.listdir(PRED_FOLDER)
@@ -62,6 +62,7 @@ for vId in range(num_video):
 
     print('Effectiveness score of video {}: {:.6f}'.format(video_name, nwRMSE_perVideo[vId]))
 
+print('-------------------------------------------------------------')
 effectiveness_score = np.sum(nwRMSE_perVideo * vehicleCnt_perVideo) / np.sum(vehicleCnt_perVideo)
 print('Overall effectiveness score: {:.6f}'.format(effectiveness_score))
 
@@ -73,6 +74,8 @@ for v in all_predicted_video:
     total_video_time.append(t_)
     total_video_frame.append(videoInfo[v]['frame_num'])
 
+
+print('Total execution time: ', total_execution_time)
 print('Total video time: ', sum(total_video_time))
 print('Total video frame: ', sum(total_video_frame))
 efficiency_score = compute_efficiency_score([total_execution_time], total_video_time, BASE_FACTOR)

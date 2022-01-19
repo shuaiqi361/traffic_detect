@@ -8,6 +8,8 @@ import cv2
 import json
 import pickle
 import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_theme()
 from scipy.signal import resample
 from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
     get_connected_polygon_with_mask, uniformsample
@@ -22,13 +24,13 @@ def encode_mask(mask):
 
 mask_size = 28
 num_vertices = 180
-alpha = 0.1
+alpha = 0.5
 n_coeffs = 64
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'val2017'
 annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
-dictFile = '{}/sparse_shape_dict/mask_fromDTM_basis_m{}_n{}_a{:.2f}.npy'.format(dataDir, mask_size, n_coeffs, alpha)
+dictFile = '{}/sparse_shape_dict/mask_fromDTM_minusone_basis_m{}_n{}_a{:.2f}.npy'.format(dataDir, mask_size, n_coeffs, alpha)
 # statFile = '{}/dictionary/train_stat_v{}_n{}_a{:.2f}.npy'.format(dataDir, num_vertices, n_coeffs, alpha)  # code mean and std
 learned_dict = np.load(dictFile)
 
@@ -87,6 +89,8 @@ for annotation in all_anns:
     dist_bbox_in = cv2.distanceTransform(dist_bbox, distanceType=cv2.DIST_L2, maskSize=3)
     dist_bbox_in = dist_bbox_in / np.max(dist_bbox_in)
 
+    dist_bbox = np.where(dist_bbox_in > 0, dist_bbox_in, -1).astype(np.float32)
+
     # visualize original resampled points in image
     # img = cv2.imread(image_name)
     # cv2.polylines(img, [np.round(fixed_contour).astype(np.int32)], True, (0, 0, 255))
@@ -94,21 +98,22 @@ for annotation in all_anns:
     # cv2.waitKey()
 
     # sparsing coding using pre-learned dict
-    learned_val_codes, _ = fast_ista(dist_bbox_in.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=100)
+    learned_val_codes, _ = fast_ista(dist_bbox.reshape((1, -1)), learned_dict, lmbda=alpha * 5, max_iter=100)
     recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((mask_size, mask_size))
-    recon_contour = np.where(recon_contour > 0.01, 1, 0).astype(np.uint8) * 255
+    recon_contour = np.clip(recon_contour, 0., 1.) * 255
+    recon_contour = recon_contour.astype(np.uint8)
     recon_ori_masks = cv2.resize(recon_contour, dsize=(int(gt_w), int(gt_h)))
-    recon_ori_masks = np.where(recon_ori_masks > 0.5 * 255, 1, 0).astype(np.uint8)
+    recon_ori_masks = np.where(recon_ori_masks >= 0.5 * 255, 1, 0).astype(np.uint8)
 
-    # img = cv2.imread(image_name)
-    # show_img = np.concatenate([dist_bbox, recon_contour], axis=1)
-    # cv2.imshow('cat', show_img.astype(np.uint8) * 255)
+    img = cv2.imread(image_name)
+    show_img = np.concatenate([dist_bbox_in * 255, recon_contour], axis=1)
+    cv2.imshow('cat', show_img.astype(np.uint8))
     # cv2.waitKey()
     # print(m_bbox.shape, recon_ori_masks.shape)
     # show_img = np.concatenate([m_bbox, recon_ori_masks * 255], axis=1)
     # cv2.imshow('cat', show_img)
-    # if cv2.waitKey() & 0xFF == ord('q'):
-    #     break
+    if cv2.waitKey() & 0xFF == ord('q'):
+        break
 
     counts_codes.append(np.sum(learned_val_codes != 0))
 
@@ -128,10 +133,13 @@ for annotation in all_anns:
     # cv2.waitKey()
 
     fig = plt.figure()
-    plt.hist(learned_val_codes[0], bins=100, color='g', alpha=0.75, edgecolor='white')
-    plt.xlabel('Sparse Coefficients', fontsize=18)
-    plt.ylabel('Counts', fontsize=18)
-    plt.title('Histogram of Coefficients'.format(cat_name), fontsize=18)
+    plt.hist(learned_val_codes[0], bins=25, color='g', alpha=0.75)
+    plt.xlabel('Sparse Codes')
+    plt.ylabel('Counts')
+    plt.title('Histogram of Codes'.format(cat_name))
+    plt.show()
+
+    ax = sns.heatmap(np.abs(learned_val_codes[0]).reshape((8, 8)), linewidths=.5, annot=True, fmt=".2f")
     plt.show()
 
     # convert reconstructed masks to original rle masks

@@ -20,7 +20,7 @@ from dataset_tools.coco_utils.utils import turning_angle_resample, get_connected
 mask_size = 28
 n_vertices = 180
 n_coeffs = 256
-alpha = 0.3
+alpha = 0.4
 
 dataDir = '/media/keyi/Data/Research/course_project/AdvancedCV_2020/data/COCO17'
 dataType = 'train2017'

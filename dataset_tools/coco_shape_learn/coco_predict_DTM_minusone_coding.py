@@ -8,6 +8,8 @@ import cv2
 import json
 import pickle
 import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_theme()
 from scipy.signal import resample
 from dataset_tools.coco_utils.utils import get_connected_polygon, turning_angle_resample, \
     get_connected_polygon_with_mask, uniformsample
@@ -96,20 +98,20 @@ for annotation in all_anns:
     # cv2.waitKey()
 
     # sparsing coding using pre-learned dict
-    learned_val_codes, _ = fast_ista(dist_bbox.reshape((1, -1)), learned_dict, lmbda=alpha, max_iter=100)
+    learned_val_codes, _ = fast_ista(dist_bbox.reshape((1, -1)), learned_dict, lmbda=alpha * 5, max_iter=100)
     recon_contour = np.matmul(learned_val_codes, learned_dict).reshape((mask_size, mask_size))
-    recon_contour = np.clip(recon_contour + 1, 0., 1.) * 255
+    recon_contour = np.clip(recon_contour, 0., 1.) * 255
     recon_contour = recon_contour.astype(np.uint8)
     recon_ori_masks = cv2.resize(recon_contour, dsize=(int(gt_w), int(gt_h)))
     recon_ori_masks = np.where(recon_ori_masks >= 0.5 * 255, 1, 0).astype(np.uint8)
 
     img = cv2.imread(image_name)
-    # show_img = np.concatenate([dist_bbox, recon_contour], axis=1)
-    # cv2.imshow('cat', show_img.astype(np.uint8) * 255)
+    show_img = np.concatenate([dist_bbox_in * 255, recon_contour], axis=1)
+    cv2.imshow('cat', show_img.astype(np.uint8))
     # cv2.waitKey()
-    print(m_bbox.shape, recon_ori_masks.shape)
-    show_img = np.concatenate([m_bbox, recon_ori_masks * 255], axis=1)
-    cv2.imshow('cat', show_img)
+    # print(m_bbox.shape, recon_ori_masks.shape)
+    # show_img = np.concatenate([m_bbox, recon_ori_masks * 255], axis=1)
+    # cv2.imshow('cat', show_img)
     if cv2.waitKey() & 0xFF == ord('q'):
         break
 
@@ -130,11 +132,19 @@ for annotation in all_anns:
     # cv2.imshow('Poly', img)
     # cv2.waitKey()
 
-    # fig = plt.figure()
-    # plt.hist(learned_val_codes[0], bins=100, color='g', alpha=0.5)
-    # plt.xlabel('Coefficients')
-    # plt.title('Sparse Coding of a {}'.format(cat_name))
-    # plt.show()
+    fig = plt.figure()
+    plt.hist(learned_val_codes[0], bins=25, color='g', alpha=0.75, edgecolor='white')
+    plt.xlabel('Sparse Codes', fontsize=18)
+    plt.ylabel('Counts', fontsize=18)
+    plt.title('Histogram of Codes'.format(cat_name), fontsize=18)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
+    plt.show()
+
+    # ax = sns.heatmap(np.abs(learned_val_codes[0]).reshape((8, 8)), linewidths=.5, annot=True, fmt=".2f")
+    ax = sns.heatmap(np.abs(learned_val_codes[0]).reshape((8, 8)), linewidths=.5, annot=False)
+    plt.axis('off')
+    plt.show()
 
     # convert reconstructed masks to original rle masks
     recon_m = np.zeros((h_img, w_img), dtype=np.uint8)

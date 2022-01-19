@@ -5,14 +5,17 @@ from dataset_tools.aic.utils import parseTXT, parseXLSX, compute_nwRMSE, compute
 from dataset_tools.aic import videoInfo, camera_info
 
 
-NUM_SEGMENTS = 20
+NUM_SEGMENTS = 50
 GT_FOLDER = '/media/keyi/Data/Research/traffic/data/AIC2021/Baidu_results/gt'
-PRED_FILE = '/media/keyi/Data/Research/traffic/detection/traffic_detection/dataset_tools/aic/2080_yolo_track_4/track_yolo.txt'  # should be the outputs .txt files
-OUTPUT_FOLDER = '/media/keyi/Data/Research/traffic/detection/traffic_detection/dataset_tools/aic/2080_yolo_track_4/tracks/'
+PRED_FILE = '/media/keyi/Data/Research/traffic/detection/traffic_detection/dataset_tools/aic/2080_track_hist_1/track1_hist.txt'  # should be the outputs .txt files
+OUTPUT_FOLDER = '//media/keyi/Data/Research/traffic/detection/traffic_detection/dataset_tools/aic/2080_track_hist_1/tracks/'
 
 gt_filenames = os.listdir(GT_FOLDER)
 with open(PRED_FILE, 'r') as f_pred:
     pred_lines = f_pred.readlines()
+
+if not os.path.exists(OUTPUT_FOLDER):
+    os.mkdir(OUTPUT_FOLDER)
 
 # videos_to_be_eval = []  # evaluate predicted counts with existing gt
 # for pred in pred_filenames:
